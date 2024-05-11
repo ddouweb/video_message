@@ -17,10 +17,3 @@ openssl-sys = { version = "0.9.102", features = ["vendored"] }
 lto = true
 opt-level = "z"
 panic = "abort"
-
-#[build]
-#rustflags = ["-C", "target-feature=+crt-static"]
-
-#[build.env]
-#OPENSSL_DIR="/usr/bin/openssl"
-#OPENSSL_INCLUDE_DIR = "/usr/include/openssl"
