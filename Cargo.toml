@@ -11,6 +11,7 @@ sqlx = { version = "0.6.2", features = ["mysql", "runtime-tokio-rustls", "chrono
 reqwest = { version = "0.11.24", features = ["json"] }
 dotenv = "0.15.0"
 openssl = "0.10.64"
+openssl-sys = { version = "0.9.102", features = ["vendored"] }
 
 [profile.release]
 lto = true
