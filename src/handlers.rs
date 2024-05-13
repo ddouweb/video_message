@@ -30,7 +30,7 @@ pub async fn handle_message(
     state: Data<Arc<Mutex<AppState>>>,
     //sender: web::Data<std::sync::mpsc::Sender<actix_web::web::Bytes>>,
 ) -> serde_json::Value {
-    println!("debug:收到网络请求");
+    //println!("debug:收到网络请求");
     let mut data_type: &str = "Unknown";
     if let Some(header) = msg.header {
         let msg_id = header.get_message_id();
@@ -81,7 +81,7 @@ pub async fn push_messages_to_third_party(
         match receiver.recv_timeout(timeout) {
             Ok(data) => {
                 let url = String::from_utf8_lossy(&data).to_string();
-                println!("debug:收到url:{url}");
+                //println!("debug:收到url:{url}");
                 urls.push(url);
                 message_count += 1;
 

@@ -120,7 +120,7 @@ impl AppState {
             "content": message,
             "topic": &self.api_topic
         });
-        println!("debug:准备发起网络请求:{message}");
+        //println!("debug:准备发起网络请求:{message}");
         if self.can_send() {
             self.increment_api_count();
             let res = crate::util::send_post_request(&self.http_client, message.to_string()).await;
