@@ -1,4 +1,9 @@
+use std::sync::{Arc, Mutex};
+
+use actix_web::web::Data;
 use serde::{Deserialize, Serialize};
+
+use super::models::AppState;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct CoverUrl {
     #[serde(rename = "shortUrl")]
@@ -41,11 +46,14 @@ pub struct Call {
 impl Call {
     pub(crate) async fn push_call(
         &self,
-        state: &actix_web::web::Data<crate::models::models::AppState>,
+        state: &Data<Arc<Mutex<AppState>>>,
         msg_id: &str,
         data_type: &str,
     ) {
-        crate::db::insert_image_url(&state.db_pool, msg_id,data_type, &self.decrypted_picture, data_type).await;
+        println!("debug:收到视频呼叫消息");
+        let message = format!("<img src='{}' />", &self.decrypted_picture);
+        state.lock().unwrap().send("视频呼叫消息".to_owned(), message).await;
+        crate::db::insert_image_url(state.lock().unwrap().get_db_pool(), msg_id,data_type, &self.decrypted_picture, data_type).await;
     }
 }
 

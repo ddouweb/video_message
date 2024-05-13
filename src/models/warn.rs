@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
-//use crate::util::HttpClient;
+use std::sync::{Arc, Mutex};
+use actix_web::web::Data;
+use crate::models::models::AppState;
 #[derive(Debug, Serialize, Deserialize)]
 pub struct WarnBody {
     #[serde(rename = "crypt")]
@@ -38,9 +40,23 @@ pub struct WarnBody {
     status: i32,
 }
 impl WarnBody {
-    pub(crate) async fn push_warn(&self, state: &actix_web::web::Data<crate::models::models::AppState>, msg_id: &str, data_type: &str) {
+    pub(crate) async fn push_warn(
+        &self,
+        state: &Data<Arc<Mutex<AppState>>>,
+        msg_id: &str,
+        data_type: &str,
+        //sender:actix_web::web::Data<mpsc::Sender<actix_web::web::Bytes>>
+    ) {
         for picture in &self.picture_list {
-            crate::db::insert_image_url(&state.db_pool, msg_id,&self.channel_name, &picture.url, data_type).await;
+            let _= state.lock().unwrap().get_sender().send(actix_web::web::Bytes::from(picture.url.clone()));
+            crate::db::insert_image_url(
+                state.lock().unwrap().get_db_pool(),
+                msg_id,
+                &self.channel_name,
+                &picture.url,
+                data_type,
+            )
+            .await;
         }
     }
 }

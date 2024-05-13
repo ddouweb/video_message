@@ -57,8 +57,25 @@ pub(crate) async fn insert_image_url(
 }
 
 pub(crate) async fn get_db_pool() -> sqlx::Pool<sqlx::MySql> {
+    dotenv::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL 没有在 .env 文件里设置");
     sqlx::MySqlPool::connect(&database_url)
-        .await
-        .expect("Failed to connect to database")
+            .await
+            .expect("Failed to connect to database")
 }
+
+// pub(crate) fn get_db_pool() -> sqlx::Pool<sqlx::MySql> {
+//     dotenv::dotenv().ok();
+//     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL 没有在 .env 文件里设置");
+
+//     let rt = tokio::runtime::Builder::new_current_thread()
+//         .enable_all()
+//         .build()
+//         .expect("Failed to create Tokio runtime.");
+
+//     rt.block_on(async {
+//         sqlx::Pool::connect(&database_url)
+//             .await
+//             .expect("Failed to connect to database")
+//     })
+// }
