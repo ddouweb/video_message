@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
-
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use actix_web::web::Data;
 use serde::{Deserialize, Serialize};
 
@@ -52,8 +52,8 @@ impl Call {
     ) {
         println!("debug:收到视频呼叫消息");
         let message = format!("<img src='{}' />", &self.decrypted_picture);
-        state.lock().unwrap().send("视频呼叫消息".to_owned(), message).await;
-        crate::db::insert_image_url(state.lock().unwrap().get_db_pool(), msg_id,data_type, &self.decrypted_picture, data_type).await;
+        state.lock().await.send("视频呼叫消息".to_owned(), message).await;
+        crate::db::insert_image_url(state.lock().await.get_db_pool(), msg_id,data_type, &self.decrypted_picture, data_type).await;
     }
 }
 

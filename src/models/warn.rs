@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc};
+use tokio::sync::Mutex;
 use actix_web::web::Data;
 use crate::models::models::AppState;
 #[derive(Debug, Serialize, Deserialize)]
@@ -48,9 +49,9 @@ impl WarnBody {
         //sender:actix_web::web::Data<mpsc::Sender<actix_web::web::Bytes>>
     ) {
         for picture in &self.picture_list {
-            let _= state.lock().unwrap().get_sender().send(actix_web::web::Bytes::from(picture.url.clone()));
+            let _= state.lock().await.get_sender().send(actix_web::web::Bytes::from(picture.url.clone()));
             crate::db::insert_image_url(
-                state.lock().unwrap().get_db_pool(),
+                state.lock().await.get_db_pool(),
                 msg_id,
                 &self.channel_name,
                 &picture.url,

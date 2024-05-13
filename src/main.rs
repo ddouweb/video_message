@@ -1,5 +1,3 @@
-use std::sync::{mpsc::channel, Arc};
-
 use actix_web::{
     rt,
     web::{scope, Bytes, Data},
@@ -7,6 +5,8 @@ use actix_web::{
 };
 use models::models::AppState;
 use reqwest::Client;
+use std::sync::{mpsc::channel, Arc};
+use tokio::sync::Mutex;
 
 mod db;
 mod handlers;
@@ -19,7 +19,7 @@ async fn main() -> std::io::Result<()> {
     let db_pool = crate::db::get_db_pool().await;
     let (sender, receiver) = channel::<Bytes>();
     let app_state = AppState::new(db_pool, Client::new(), sender);
-    let app_state = Arc::new(std::sync::Mutex::new(app_state));
+    let app_state = Arc::new(Mutex::new(app_state));
     //let app_state = Arc::new(app_state);
     rt::spawn(handlers::push_messages_to_third_party(
         Arc::clone(&app_state), //app_state.clone(),

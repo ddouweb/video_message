@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
-
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use actix_web::web::Data;
 use serde::{Deserialize, Serialize};
 
@@ -39,7 +39,7 @@ impl OnOffLine {
         println!();
         let message = format!("摄像头[{}] 于{}  状态变更为{}", &self.device_name, &self.occur_time, &self.msg_type);
         let title = format!("摄像头[{}] 状态消息",&self.device_name);
-        state.lock().unwrap().send(title, message).await;
+        state.lock().await.send(title, message);
         // match self.msg_type {
         //     DeviceStatus::Online => {
         //         println!("设备在线 {} {} {:?}", &self.device_name, self.occur_time, &self.msg_type);

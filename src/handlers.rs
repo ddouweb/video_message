@@ -1,5 +1,5 @@
-use std::sync::{Arc, Mutex};
-
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use crate::models::models::{AppState, Body, Message};
 use actix_web::{web, web::Data, HttpRequest, HttpResponse, Responder};
 use serde_json::json;
@@ -57,7 +57,7 @@ pub async fn handle_message(
             None => "Unknown",
         };
         crate::db::insert_message(
-            state.lock().unwrap().get_db_pool(),
+            state.lock().await.get_db_pool(),
             &header,
             msg.body.as_ref(),
             data_type,
@@ -80,26 +80,24 @@ pub async fn push_messages_to_third_party(
     loop {
         match receiver.recv_timeout(timeout) {
             Ok(data) => {
-                let mut app_state: std::sync::MutexGuard<AppState> = app_state.lock().unwrap();
                 let url = String::from_utf8_lossy(&data).to_string();
                 println!("debug:收到url:{url}");
                 urls.push(url);
                 message_count += 1;
 
                 // 检查消息数量是否达到10条
-                if message_count >= app_state.get_message_size() {
+                if message_count >= app_state.lock().await.get_message_size() {
                     let combined_messages = urls
                         .iter()
                         .map(|url| format!("<img src='{}' />", url))
                         .collect::<Vec<String>>()
                         .join(" ");
-                    app_state
+                    app_state.lock().await
                         .send("图片抓拍信息".to_owned(), combined_messages)
                         .await;
                 }
             }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                let mut app_state: std::sync::MutexGuard<AppState> = app_state.lock().unwrap();
                 // 在超时时执行其他逻辑
                 println!("No data received. Continuing with other tasks.");
 
@@ -111,7 +109,7 @@ pub async fn push_messages_to_third_party(
                         .map(|url| format!("<img src='{}' />", url))
                         .collect::<Vec<String>>()
                         .join("");
-                    app_state
+                    app_state.lock().await
                         .send("图片抓拍信息".to_owned(), combined_messages)
                         .await;
                     urls.clear();
@@ -132,5 +130,6 @@ pub async fn push_messages_to_third_party(
             urls.clear();
             message_count = 0;
         }
+        tokio::time::sleep(tokio::time::Duration::from_micros(300)).await;
     }
 }
