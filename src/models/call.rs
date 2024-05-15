@@ -1,10 +1,6 @@
-use std::sync::Arc;
-use tokio::sync::Mutex;
-use actix_web::web::Data;
 use serde::{Deserialize, Serialize};
 
-use super::models::AppState;
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize,Clone)]
 pub struct CoverUrl {
     #[serde(rename = "shortUrl")]
     short_url: String,
@@ -12,7 +8,7 @@ pub struct CoverUrl {
     url: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize,Clone)]
 pub struct Call {
     #[serde(rename = "coverPicture")]
     cover_picture: CoverPicture,
@@ -44,20 +40,31 @@ pub struct Call {
     timestamp: String,
 }
 impl Call {
-    pub(crate) async fn push_call(
-        &self,
-        state: &Data<Arc<Mutex<AppState>>>,
-        msg_id: &str,
-        data_type: &str,
-    ) {
-        //println!("debug:收到视频呼叫消息");
-        let message = format!("<img src='{}' />", &self.decrypted_picture);
-        state.lock().await.send("视频呼叫消息".to_owned(), message).await;
-        crate::db::insert_image_url(state.lock().await.get_db_pool(), msg_id,data_type, &self.decrypted_picture, data_type).await;
+    // pub(crate) async fn push_call(
+    //     &self,
+    //     state: &Data<Arc<Mutex<AppState>>>,
+    //     msg_id: &str,
+    //     data_type: &str,
+    // ) {
+    //     //println!("debug:收到视频呼叫消息");
+    //     let message = format!("<img src='{}' />", &self.decrypted_picture);
+    //     //state.lock().unwrap().get_sender().send("视频呼叫消息".to_owned());
+    //     //crate::db::insert_image_url(state.lock().unwrap().get_db_pool(), msg_id,data_type, &self.decrypted_picture, data_type).await;
+    // }
+    pub fn get_title(&self)->String{
+        format!("视频呼叫消息")
+    }
+
+    pub fn get_message(&self)->String{
+        format!("<img src='{}' />", &self.decrypted_picture)
+    }
+
+    pub fn get_image(&self)->&str{
+        &self.decrypted_picture
     }
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize,Clone)]
 pub struct CoverPicture {
     bucket: String,
     lifecycle: i32,

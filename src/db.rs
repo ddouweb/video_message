@@ -57,7 +57,6 @@ pub(crate) async fn insert_image_url(
 }
 
 pub(crate) async fn get_db_pool() -> sqlx::Pool<sqlx::MySql> {
-    dotenv::dotenv().ok();
     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL 没有在 .env 文件里设置");
     sqlx::MySqlPool::connect(&database_url)
             .await

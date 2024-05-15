@@ -1,12 +1,12 @@
 use serde::{Deserialize, Serialize};
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub struct ReportBody {
     #[serde(rename = "reported")]
     reported: Vec<ReportedItem>,
     #[serde(rename = "type")]
     r#type: String,
 }
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize,Clone)]
 struct ReportedItem {
     #[serde(default, rename = "actor")]
     actor: String,

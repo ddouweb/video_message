@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::sync::{Arc};
-use tokio::sync::Mutex;
-use actix_web::web::Data;
-use crate::models::models::AppState;
-#[derive(Debug, Serialize, Deserialize)]
+
+#[derive(Debug, Serialize, Deserialize,Clone)]
 pub struct WarnBody {
     #[serde(rename = "crypt")]
     crypt: i32,
@@ -41,30 +38,26 @@ pub struct WarnBody {
     status: i32,
 }
 impl WarnBody {
-    pub(crate) async fn push_warn(
-        &self,
-        state: &Data<Arc<Mutex<AppState>>>,
-        msg_id: &str,
-        data_type: &str,
-        //sender:actix_web::web::Data<mpsc::Sender<actix_web::web::Bytes>>
-    ) {
-        for picture in &self.picture_list {
-            let _= state.lock().await.get_sender().send(actix_web::web::Bytes::from(picture.url.clone()));
-            crate::db::insert_image_url(
-                state.lock().await.get_db_pool(),
-                msg_id,
-                &self.channel_name,
-                &picture.url,
-                data_type,
-            )
-            .await;
-        }
+    pub fn get_picture_list(&self)->&Vec<Picture>{
+        &self.picture_list
+    }
+    pub fn get_channel_name(&self)->&String{
+        &self.channel_name
     }
 }
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize,Clone)]
 pub struct Picture {
     #[serde(rename = "id")]
     id: String,
     #[serde(rename = "url")]
     url: String,
+}
+impl Picture {
+    pub fn get_url(&self)->&String{
+        &self.url
+    }
+
+    pub fn get_url_string(&self)->String{
+        self.url.clone()
+    }
 }
