@@ -76,7 +76,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                             msg_id,
                                             data.get_channel_name(),
                                             picture.get_url(),
-                                            data_type,
+                                            body.get_name(),
                                         )
                                         .await;
                                     }
@@ -92,7 +92,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                         msg_id,
                                         data_type,
                                         data.get_image(),
-                                        data_type,
+                                        body.get_name(),
                                     )
                                     .await;
                                 }

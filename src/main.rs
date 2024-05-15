@@ -21,6 +21,8 @@ async fn main() -> std::io::Result<()> {
         handlers::handle_message(receiver).await;
     });
 
+    println!("应用即将启动：{:?}",chrono::Local::now().naive_local());
+
 
     let bind_address =
         std::env::var("APP_SERVER_ADDR").unwrap_or_else(|_| "0.0.0.0:8000".to_owned());

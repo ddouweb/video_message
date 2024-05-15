@@ -1,3 +1,4 @@
+
 pub struct ChanMsg{
     db_pool: sqlx::mysql::MySqlPool,
     http_client: reqwest::Client,
@@ -55,7 +56,7 @@ impl ChanMsg {
             match res {
                 Ok(data) => {
                     if let Some(code) = data.get("code") {
-                        if code == 999 {
+                        if code == 999 || code ==900 || code == 903{
                             self.disable_api_send();
                         } else {
                             // 请求成功，继续处理其他逻辑
