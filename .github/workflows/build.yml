@@ -14,7 +14,7 @@ jobs:
       uses: actions/checkout@v4  # 更新至 v4
 
     - name: Set up Rust
-      uses: actions-rs/toolchain@v2  # 更新至 v2
+      uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
         target: x86_64-unknown-linux-musl
