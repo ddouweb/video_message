@@ -1,4 +1,5 @@
 use actix_web::{web, App, HttpServer};
+use chrono::Timelike;
 use models::models::AppState;
 use tokio::sync::mpsc;
 use std::sync::Arc;
@@ -21,7 +22,7 @@ async fn main() -> std::io::Result<()> {
         handlers::handle_message(receiver).await;
     });
 
-    println!("应用即将启动：{:?}",chrono::Local::now().naive_local());
+    println!("应用即将启动：{:?}",chrono::Local::now().naive_local().hour());
 
 
     let bind_address =

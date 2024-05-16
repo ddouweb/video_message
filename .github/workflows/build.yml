@@ -1,25 +1,42 @@
-name: Build and Test
+name: Build and Release
 
 on:
   push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
-
+    branches:
+      - master
 jobs:
   build:
-    runs-on: rust:latest
+    runs-on: ubuntu-latest
+
+    services:
+      docker:
+        image: docker:20.10.7
+        options: --privileged
+        ports:
+          - 2375:2375
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v2
+    - name: Checkout code
+      uses: actions/checkout@v3
 
-    - name: Install Rust toolchain
+    - name: Set up Rust
       uses: actions-rs/toolchain@v1
       with:
         toolchain: stable
         target: x86_64-unknown-linux-musl
         override: true
 
-    - name: Build release binary
-      run: cargo build --target x86_64-unknown-linux-musl --release --verbose
+    - name: Install musl tools
+      run: sudo apt-get update && sudo apt-get install -y musl-tools musl-dev
+
+    - name: Update CA certificates
+      run: sudo update-ca-certificates
+
+    - name: Build release
+      run: cargo build --target x86_64-unknown-linux-musl --release
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: hellorust
+        path: target/x86_64-unknown-linux-musl/release/hellorust
