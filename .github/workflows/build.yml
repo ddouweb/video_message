@@ -4,23 +4,17 @@ on:
   push:
     branches:
       - master
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
-    services:
-      docker:
-        image: docker:20.10.7
-        options: --privileged
-        ports:
-          - 2375:2375
-
     steps:
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4  # 更新至 v4
 
     - name: Set up Rust
-      uses: actions-rs/toolchain@v1
+      uses: actions-rs/toolchain@v2  # 更新至 v2
       with:
         toolchain: stable
         target: x86_64-unknown-linux-musl
@@ -36,7 +30,7 @@ jobs:
       run: cargo build --target x86_64-unknown-linux-musl --release
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4  # 更新至 v4
       with:
         name: hellorust
         path: target/x86_64-unknown-linux-musl/release/hellorust
