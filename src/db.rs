@@ -1,3 +1,5 @@
+use sqlx::Row;
+
 pub(crate) async fn insert_message(
     db_pool: &sqlx::Pool<sqlx::MySql>,
     header: &crate::models::models::Header,
@@ -40,20 +42,21 @@ pub(crate) async fn insert_image_url(
     channel_name: &str,
     url: &str,
     data_type: &str,
-) {
-    sqlx::query(
-        r#"INSERT INTO message_img 
-    (message_id, channel_name, url, `data_type`)
-    VALUES(?, ?, ?, ?) 
-    RETURNING message_id, channel_name, url, data_type,id"#,
-    )
-    .bind(msg_id)
-    .bind(channel_name)
-    .bind(url)
-    .bind(data_type)
-    .fetch_one(db_pool)
-    .await
-    .unwrap();
+)->u64 {
+    let row: sqlx::mysql::MySqlRow = sqlx::query(
+            r#"INSERT INTO message_img 
+        (message_id, channel_name, url, `data_type`)
+        VALUES(?, ?, ?, ?) 
+        RETURNING id"#,
+        )
+        .bind(msg_id)
+        .bind(channel_name)
+        .bind(url)
+        .bind(data_type)
+        .fetch_one(db_pool)
+        .await
+        .unwrap();
+    return row.get(0);
 }
 
 pub(crate) async fn get_db_pool() -> sqlx::Pool<sqlx::MySql> {
