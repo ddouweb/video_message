@@ -154,7 +154,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                             .map(|url| format!("<img src='{}' />", url))
                             .collect::<Vec<String>>()
                             .join(" ");
-                        app.send(format!("{}张图片抓拍",message_count), combined_messages).await;
+                        app.send(format!("{}张图片抓拍",pic_count), combined_messages).await;
                         pic_count = 0;
                         urls.clear();
                     }
@@ -184,7 +184,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                         .collect::<Vec<String>>()
                         .join(" ");
                     //app.send("图片抓拍信息".to_owned(), combined_messages).await;
-                    app.send(format!("{}张图片抓拍",message_count), combined_messages).await;
+                    app.send(format!("{}张图片抓拍",pic_count), combined_messages).await;
                     pic_count = 0;
                     timeout_count = 0;
                     urls.clear();
