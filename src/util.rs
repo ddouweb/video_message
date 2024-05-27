@@ -31,12 +31,22 @@ pub(crate) async fn save_image(
     let mut file = match File::create(&file_path).await {
         Ok(file) => file,
         Err(err) => {
-            println!("无法在{}创建文件: {}",last_path, err);
+            println!("无法在{}创建文件: {}", last_path, err);
             return;
         }
     };
-    let response = match reqwest::Client::new().get(&img_url).timeout(std::time::Duration::from_secs(3)).send().await {
-    //let response = match reqwest::Client::new().get(&img_url).timeout(std::time::Duration::from_secs(3)).send().await {
+    //let empty_certificates: Vec<reqwest::Certificate> = Vec::new();
+    let response = match reqwest::Client::builder()
+        .danger_accept_invalid_certs(true)
+        .build()
+        .unwrap()
+        .get(&img_url)
+        //.ssl_certs(empty_certificates)
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await
+    {
+        //let response = match reqwest::Client::new().get(&img_url).timeout(std::time::Duration::from_secs(3)).send().await {
         Ok(response) => response,
         Err(err) => {
             println!("请求图片失败: {}", err);

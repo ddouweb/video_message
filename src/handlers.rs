@@ -169,15 +169,15 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                 println!("获取管道数据超时");
 
                 let mut current_compare_pic_count = min_pic_count;
-                let mut current_compare_timeout_countt = max_timeout_count;
+                let mut current_compare_timeout_count = max_timeout_count;
                 let now = chrono::Local::now().time(); // 获取当前本地时间
                 if now < start_time || now > end_time {
                     current_compare_pic_count *= 2;
-                    current_compare_timeout_countt *= 2;
+                    current_compare_timeout_count *= 4;
                 }
                 if pic_count > 0
                     && (pic_count >= current_compare_pic_count
-                        || timeout_count >= current_compare_timeout_countt)
+                        || timeout_count >= current_compare_timeout_count)
                 {
                     let combined_messages = urls
                         .iter()
