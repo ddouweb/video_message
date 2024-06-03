@@ -37,6 +37,7 @@ WORKDIR /app
 
 # Copy our build
 COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/hellorust ./app
+#RUN --mount=type=bind,from=builder,source=/app/target/x86_64-unknown-linux-musl/release/hellorust,target=./app
 
 # Use an unprivileged user.
 USER app:app

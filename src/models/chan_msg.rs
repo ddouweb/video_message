@@ -7,7 +7,7 @@ pub struct ChanMsg {
     api_max_count: u8,                    //接口可调用的最大次数
     api_token: String,                    //apiToken
     api_topic: String,                    //消息主题通道
-    pic_size: u8,                         //一次消息最大包含几张图片信息
+    //pic_size: u8,                         //一次消息最大包含几张图片信息
     use_time: chrono::prelude::NaiveDate, //API调用时间
     his_path: String,                     //历史图片的保存路径
     last_path: String,                    //最新图片的保存路径
@@ -31,10 +31,10 @@ impl ChanMsg {
             //     .unwrap(),
             api_send_count: std::sync::Mutex::new(0),
             api_topic: std::env::var("APP_API_TOPIC").unwrap_or_else(|_| "video".to_owned()),
-            pic_size: std::env::var("APP_MESSAGE_SIZE")
+            /*pic_size: std::env::var("APP_MESSAGE_SIZE")
                 .unwrap_or_else(|_| "10".to_owned())
                 .parse::<u8>()
-                .expect("设置APP_MESSAGE_SIZE错误!"),
+                .expect("设置APP_MESSAGE_SIZE错误!"),*/
             api_max_count: std::env::var("APP_API_COUNT")
                 .unwrap_or_else(|_| "200".to_owned())
                 .parse::<u8>()
@@ -118,9 +118,9 @@ impl ChanMsg {
         );
         *count = self.api_max_count;
     }
-    pub fn get_pic_size(&self) -> u8 {
-        self.pic_size
-    }
+    // pub fn get_pic_size(&self) -> u8 {
+    //     self.pic_size
+    // }
 
     //下载图片。
     pub(crate) async fn save_image(&self, id: u64, img_url: String) {
