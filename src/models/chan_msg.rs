@@ -131,7 +131,7 @@ impl ChanMsg {
      * 清理昨日的图片
      */
     fn clean_current_folder(&self) -> std::io::Result<()> {
-        let now = SystemTime::now();
+        let now: SystemTime = SystemTime::now();
         let today = now.duration_since(UNIX_EPOCH).unwrap().as_secs() / 86400;
 
         for entry in std::fs::read_dir(&self.last_path)? {

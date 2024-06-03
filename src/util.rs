@@ -76,7 +76,10 @@ pub(crate) async fn save_image(
     }
 
     // 复制文件到 history_img 文件夹
-    let history_path: std::path::PathBuf = Path::new(his_path).join(&filename);
+    let history_dir = format!("{}/{}",his_path,chrono::Local::now().format("%Y-%m-%d").to_string());
+    // 创建或检查目标文件夹是否存在
+    let _= std::fs::create_dir_all(&history_dir);
+    let history_path: std::path::PathBuf = Path::new(&history_dir).join(&filename);
     if let Err(err) = std::fs::copy(&file_path, &history_path) {
         println!("复制文件失败: {}", err);
     }
