@@ -42,42 +42,40 @@ pub(crate) async fn insert_image_url(
     channel_name: &str,
     url: &str,
     data_type: &str,
-)->u64 {
+) -> u64 {
     let row: sqlx::mysql::MySqlRow = sqlx::query(
-            r#"INSERT INTO message_img 
+        r#"INSERT INTO message_img 
         (message_id, channel_name, url, `data_type`)
         VALUES(?, ?, ?, ?) 
         RETURNING id"#,
-        )
-        .bind(msg_id)
-        .bind(channel_name)
-        .bind(url)
-        .bind(data_type)
-        .fetch_one(db_pool)
-        .await
-        .unwrap();
+    )
+    .bind(msg_id)
+    .bind(channel_name)
+    .bind(url)
+    .bind(data_type)
+    .fetch_one(db_pool)
+    .await
+    .unwrap();
     return row.get(0);
 }
 
 pub(crate) async fn get_db_pool() -> sqlx::Pool<sqlx::MySql> {
-    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL 没有在 .env 文件里设置");
-    sqlx::MySqlPool::connect(&database_url)
-            .await
-            .expect("Failed to connect to database")
+    let database_url = std::env::var("DATABASE_URL")
+        .expect("DATABASE_URL 没有在 .env 文件里设置");
+
+    let pool = sqlx::mysql::MySqlPoolOptions::new()
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("Failed to connect to database");
+
+    let time_zone = std::env::var("TIME_ZONE").unwrap_or_else(|_| "Asia/Shanghai".to_owned());
+    let time_zone_query = format!("SET time_zone = '{}';", time_zone);
+
+    sqlx::query(&time_zone_query)
+        .execute(&pool)
+        .await
+        .expect("Failed to execute time zone query");
+    println!("数据库连接成功！");
+    pool
 }
-
-// pub(crate) fn get_db_pool() -> sqlx::Pool<sqlx::MySql> {
-//     dotenv::dotenv().ok();
-//     let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL 没有在 .env 文件里设置");
-
-//     let rt = tokio::runtime::Builder::new_current_thread()
-//         .enable_all()
-//         .build()
-//         .expect("Failed to create Tokio runtime.");
-
-//     rt.block_on(async {
-//         sqlx::Pool::connect(&database_url)
-//             .await
-//             .expect("Failed to connect to database")
-//     })
-// }
