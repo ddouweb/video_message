@@ -24,6 +24,7 @@ pub(crate) async fn save_image(
     img_url: String,
     last_path: &str,
     his_path: &str,
+    data_dir:&str
 ) {
     let filename = format!("{id}.jpg");
     let file_path = Path::new(last_path).join(&filename);
@@ -76,7 +77,7 @@ pub(crate) async fn save_image(
     }
 
     // 复制文件到 history_img 文件夹
-    let history_dir = format!("{}/{}",his_path,chrono::Local::now().format("%Y-%m-%d").to_string());
+    let history_dir = format!("{}/{}",his_path,data_dir);
     // 创建或检查目标文件夹是否存在
     let _= std::fs::create_dir_all(&history_dir);
     let history_path: std::path::PathBuf = Path::new(&history_dir).join(&filename);

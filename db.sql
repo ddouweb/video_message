@@ -8,6 +8,7 @@ CREATE TABLE `message_receive` (
   `message_time` bigint(1) unsigned DEFAULT NULL,
   `body` text DEFAULT NULL,
   `data_type` varchar(31) DEFAULT NULL,
+  `data_dir` varchar(12) DEFAULT NULL,
   `create_time` datetime DEFAULT current_timestamp(),
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

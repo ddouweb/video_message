@@ -1,4 +1,4 @@
-use sqlx::Row;
+use sqlx::{Executor, Row};
 
 pub(crate) async fn insert_message(
     db_pool: &sqlx::Pool<sqlx::MySql>,
@@ -42,24 +42,26 @@ pub(crate) async fn insert_image_url(
     channel_name: &str,
     url: &str,
     data_type: &str,
+    data_dir: &str
 ) -> u64 {
     let row: sqlx::mysql::MySqlRow = sqlx::query(
         r#"INSERT INTO message_img 
-        (message_id, channel_name, url, `data_type`)
-        VALUES(?, ?, ?, ?) 
+        (message_id, channel_name, url, `data_type`,`data_dir`)
+        VALUES(?, ?, ?, ?,?) 
         RETURNING id"#,
     )
     .bind(msg_id)
     .bind(channel_name)
     .bind(url)
     .bind(data_type)
+    .bind(data_dir)
     .fetch_one(db_pool)
     .await
     .unwrap();
     return row.get(0);
 }
 
-pub(crate) async fn get_db_pool() -> sqlx::Pool<sqlx::MySql> {
+/*pub(crate) async fn get_db_pool() -> sqlx::Pool<sqlx::MySql> {
     let database_url = std::env::var("DATABASE_URL")
         .expect("DATABASE_URL 没有在 .env 文件里设置");
 
@@ -78,4 +80,25 @@ pub(crate) async fn get_db_pool() -> sqlx::Pool<sqlx::MySql> {
         .expect("Failed to execute time zone query");
     println!("数据库连接成功！");
     pool
+}*/
+
+pub(crate) async fn get_db_pool() -> sqlx::Pool<sqlx::MySql> {
+    let database_url = std::env::var("DATABASE_URL").expect("DATABASE_URL 没有在 .env 文件里设置");
+    sqlx::mysql::MySqlPoolOptions::new()
+        .after_connect(|conn, _meta| {
+            Box::pin(async move {
+                let time_zone = std::env::var("TIME_ZONE").unwrap_or_else(|_| "Asia/Shanghai".to_owned());
+                let time_zone = format!("SET time_zone = '{}';", time_zone);
+                //conn.execute(time_zone.as_str()).await?;
+                match conn.execute(time_zone.as_str()).await {
+                    Ok(_) => println!("数据库连接成功,时区设置成功！"),
+                    Err(e) => println!("数据库异常 异常信息: {}", e),
+                }
+                Ok(())
+            })
+        })
+        .max_connections(5)
+        .connect(&database_url)
+        .await
+        .expect("Failed to connect to database")
 }

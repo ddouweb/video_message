@@ -103,7 +103,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
     let mut urls: Vec<String> = Vec::new();
     let mut pic_count = 0;
     //let mut timeout_count = 0;
-
+    let mut date_dir = chrono::Local::now().format("%Y-%m-%d").to_string();
     loop {
         match time::timeout(time::Duration::from_secs(timeout), receiver.recv()).await {
             Ok(Some(msg)) => {
@@ -121,9 +121,10 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                             data.get_channel_name(),
                                             picture.get_url(),
                                             body.get_name(),
+                                            &date_dir,
                                         )
                                         .await;
-                                        app.save_image(id, picture.get_url_string()).await;
+                                        app.save_image(id, picture.get_url_string(),&date_dir).await;
                                         //app.save_image(id,picture.get_url_string()).await;
                                         urls.push(format!("{img_server}/{id}.jpg"));
                                         pic_count += 1;
@@ -141,6 +142,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                         data_type,
                                         data.get_image(),
                                         body.get_name(),
+                                        &date_dir,
                                     )
                                     .await;
                                 }
@@ -180,7 +182,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
             }
             Err(_) => {
                 println!("获取管道数据超时");
-
+                date_dir = chrono::Local::now().format("%Y-%m-%d").to_string();
                 let mut current_compare_pic_count = min_pic_count;
                 //let mut current_compare_timeout_count = max_timeout_count;
                 let now = chrono::Local::now().time(); // 获取当前本地时间

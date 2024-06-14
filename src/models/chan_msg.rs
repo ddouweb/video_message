@@ -123,8 +123,8 @@ impl ChanMsg {
     // }
 
     //下载图片。
-    pub(crate) async fn save_image(&self, id: u64, img_url: String) {
-        crate::util::save_image(&self.http_client,id, img_url, &self.last_path, &self.his_path).await;
+    pub(crate) async fn save_image(&self, id: u64, img_url: String, data_dir:&str) {
+        crate::util::save_image(&self.http_client,id, img_url, &self.last_path, &self.his_path,data_dir).await;
     }
 
     /**
