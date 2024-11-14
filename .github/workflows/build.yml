@@ -60,6 +60,6 @@ jobs:
       run: |
           git tag -d latest || true
           git tag latest
-          git push origin latest
+          git push -f origin latest
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   
