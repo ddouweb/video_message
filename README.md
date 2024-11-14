@@ -1,3 +1,4 @@
+```
 services:
   redis:
     image: redis
@@ -38,3 +39,4 @@ services:
       - /data/apps/app:/app:ro
       - /data/his_path:/data/his_path:rw
       - /data/last_path:/data/last_path:rw
+```docker-compose.yaml
