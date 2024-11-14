@@ -12,6 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions: # 设置 GITHUB_TOKEN 权限
       contents: write  # 允许读取和写入内容，用于创建和更新 Release
+      checks: write
+      security-events: write
 
     steps:
     - name: Checkout code
