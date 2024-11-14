@@ -61,4 +61,4 @@ jobs:
           git tag -f latest
           git push -f origin latest
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   
+        GITHUB_TOKEN: ${{ secrets.PAT_PUSH }}   
