@@ -58,7 +58,8 @@ jobs:
     - name: Update latest tag
       if: startsWith(github.ref, 'refs/tags/v')
       run: |
-          git tag -f latest
-          git push -f origin latest
+          git tag -d latest || true
+          git tag latest
+          git push origin latest
       env:
-        GITHUB_TOKEN: ${{ secrets.PAT_PUSH }}   
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   
