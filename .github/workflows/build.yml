@@ -55,12 +55,10 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    # - name: Upload release asset
-    #   if: startsWith(github.ref, 'refs/tags/v')
-    #   uses: actions/upload-release-asset@v1
-    #   with:
-    #     upload_url: ${{ steps.create_release.outputs.upload_url }}
-    #     asset_path: target/x86_64-unknown-linux-musl/release/videoMsg
-    #     asset_name: videoMsg
-    #     asset_content_type: application/octet-stream    
-    
+    - name: Update latest tag
+      if: startsWith(github.ref, 'refs/tags/v')
+      run: |
+          git tag -f latest
+          git push -f origin latest
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}   
