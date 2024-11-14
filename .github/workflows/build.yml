@@ -10,6 +10,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions: # 设置 GITHUB_TOKEN 权限
+      contents: write  # 允许读取和写入内容，用于创建和更新 Release
 
     steps:
     - name: Checkout code
@@ -48,7 +50,7 @@ jobs:
         draft: false
         prerelease: false
       env:
-        GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     - name: Upload release asset
       if: startsWith(github.ref, 'refs/tags/v')
