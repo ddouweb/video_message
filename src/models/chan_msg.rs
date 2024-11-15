@@ -140,7 +140,7 @@ impl ChanMsg {
             let modified = metadata.modified()?;
             let modified_day = modified.duration_since(UNIX_EPOCH).unwrap().as_secs() / 86400;
 
-            if modified_day + 1 <= today {
+            if modified_day + 2 <= today {
                 std::fs::remove_file(entry.path())?;
             }
         }

@@ -1,9 +1,9 @@
 services:
   nginx:
     image: nginx:1.20.2-alpine
-    container_name: redis
+    container_name: nginx
     volumes:
-      - /data/nginx.conf:/etc/nginx/conf.d/default.conf  # 挂载 Nginx 配置文件
+      - /data/video_root/nginx.conf:/etc/nginx/conf.d/default.conf  # 挂载 Nginx 配置文件
     ports:
       - "443:443"
       - "80:80"
@@ -15,7 +15,7 @@ services:
       REDIS_PASSWORD: 123456
     command: redis-server --requirepass 123456
     volumes:
-      - /data/docker-data/redis:/data
+      - /data/video_root/docker-data/redis:/data
 
   mariadb:
     image: mariadb:10.6.14
@@ -25,19 +25,20 @@ services:
       TZ: Asia/Shanghai
     command: --lower-case-table-names=1
     volumes:
-      - /data/mariadb-init.sql:/docker-entrypoint-initdb.d/init.sql  # 挂载初始化 SQL 文件
-      - /data/docker-data/mariadb:/var/lib/mysql
+      - /data/video_root/mariadb-init.sql:/docker-entrypoint-initdb.d/init.sql  # 挂载初始化 SQL 文件
+      - /data/video_root/docker-data/mariadb:/var/lib/mysql
 
   video_message:
     image: webtao/scratch:zoneinfo
     container_name: video_message
     environment:
       DATABASE_URL: mysql://video:123456@mariadb:3306/video?timezone=Asia/Shanghai
-      APP_API_TOKEN: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-      APP_IMG_SERVER: https://img.xxxxxxxxxxxxxxx.cn/img
+      APP_API_TOKEN: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  #PUSH_PLUS密钥
+      APP_API_TOPIC: video                            #PUSH_PLUS群组编码
+      APP_IMG_SERVER: https://img.xxxxxxxxxxxxxxx.cn/img #收到消息后，消息内图片的url地址前缀
       APP_API_TIMEOUT: 600
       APP_MESSAGE_SIZE: 50
     volumes:
-      - /data/apps/app:/app:ro
-      - /data/his_path:/data/his_path:rw
-      - /data/last_path:/data/last_path:rw
+      - /data/video_root/apps/app:/app:ro #应用可执行文件
+      - /data/video_root/his_path:/data/his_path:rw  #存放历史截图
+      - /data/video_root/last_path:/data/last_path:rw #存放最新的截图
