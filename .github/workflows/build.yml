@@ -9,7 +9,7 @@ on:
 env:
   TARGET: x86_64-unknown-linux-musl
   ARTIFACT_NAME: videoMsg
-  ARTIFACT_PATH: target/${{ env.TARGET }}/release/${{ env.ARTIFACT_NAME }}
+  ARTIFACT_PATH: target/x86_64-unknown-linux-musl/release/videoMsg
 
 jobs:
   build:
