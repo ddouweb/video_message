@@ -41,24 +41,17 @@ jobs:
         name: videoMsg
         path: target/x86_64-unknown-linux-musl/release/videoMsg
     
-    - name: Create or Update Release
+    - name: Release
       if: startsWith(github.ref, 'refs/tags/v')
-      uses: softprops/action-gh-release@v1
+      uses: softprops/action-gh-release@v2.1.0
       with:
         files: target/x86_64-unknown-linux-musl/release/videoMsg
-        # tag_name: ${{ github.ref_name }}
-        # release_name: Release ${{ github.ref_name }}
-        # body: "Automated release for version ${{ github.ref_name }}"
-        # draft: false
-        # prerelease: false
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Update latest tag
-      if: startsWith(github.ref, 'refs/tags/v')
-      run: |
-          git tag -d latest || true
-          git tag latest
-          git push -f origin latest
-      env:
-        GITHUB_TOKEN: ${{ secrets.PAT_PUSH }}   
+    # - name: Update latest tag
+    #   if: startsWith(github.ref, 'refs/tags/v')
+    #   run: |
+    #       git tag -d latest || true
+    #       git tag latest
+    #       git push -f origin latest
+    #   env:
+    #     GITHUB_TOKEN: ${{ secrets.PAT_PUSH }}   
