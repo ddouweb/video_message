@@ -49,6 +49,10 @@ jobs:
       with:
         files: |
           ${{ env.ARTIFACT_PATH }}
+          docker-compose.yaml
+          install.sh
+          nginx.conf
+          mariadb-init.sql
         tag_name: ${{ github.ref_name == 'master' && 'latest' || github.ref_name }}  
         body: "Automated release for version ${{ github.ref_name }}"
         draft: false
