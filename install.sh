@@ -36,7 +36,8 @@ read -p "请输入访问图片资源端口号 [默认: 443]（如果不使用ssl
 IMG_PORT=${IMG_PORT:-443}
 echo "访问图片资源端口号: $IMG_PORT"
 
-IMG_URL="http://${MY_IP}/${MSG_PORT}/img" 
+IMG_URL="http://${MY_IP}:${MSG_PORT}/img" 
+HOOK_URL="http://${MY_IP}:${MSG_PORT}/video_message/webhook"
 
 while true; do
     read -p "请输入 pushPlus 的 token: " PUSH_TOKEN
@@ -84,7 +85,8 @@ CONFIGURE_SSL=${CONFIGURE_SSL:-n}
 if [[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]]; then
 
     read -p "请输入服务器域名: " MY_DOMAIN
-    IMG_URL="https://${MY_DOMAIN}/${IMG_PORT}/img"
+    IMG_URL="https://${MY_DOMAIN}:${IMG_PORT}/img"
+    HOOK_URL="https://${MY_DOMAIN}:${IMG_PORT}/video_message/webhook"
 
     read -p "请输入 SSL 证书文件的完整路径: " CERT_PATH
     while [[ ! -f "$CERT_PATH" ]]; do
@@ -178,4 +180,4 @@ echo "启动 Docker Compose..."
 docker compose -f $INSTALL_DIR/docker-compose.yml up -d
 echo "Installation complete. The application is running."
 
-echo "图片地址: $IMG_URL"
+echo "请配置萤石云/云信令/消息推送的webhook回调地址为: $HOOK_URL"
