@@ -2,11 +2,11 @@ CREATE DATABASE IF NOT EXISTS video;
 USE video;
 
 -- 删除已有的表
-DROP TABLE IF EXISTS video.message_receive;
-DROP TABLE IF EXISTS video.message_img;
+DROP TABLE IF EXISTS message_receive;
+DROP TABLE IF EXISTS message_img;
 
 -- 消息接收记录
-CREATE TABLE `video.message_receive` (
+CREATE TABLE `message_receive` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `message_id` VARCHAR(31) NOT NULL,
   `device_id` VARCHAR(31) DEFAULT NULL,
@@ -21,7 +21,7 @@ CREATE TABLE `video.message_receive` (
 ) ENGINE=InnoDB AUTO_INCREMENT=1 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- 图片分析结果
-CREATE TABLE `video.message_img` (
+CREATE TABLE `message_img` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `message_id` VARCHAR(31) NOT NULL,
   `channel_name` VARCHAR(255) DEFAULT NULL,
