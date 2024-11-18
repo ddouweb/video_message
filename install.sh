@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # 介绍信息
 echo -e "\e[32m
 1.您至少已经准备好了push_plus的token:
@@ -6,14 +6,38 @@ echo -e "\e[32m
 3.建议您配置你的nginx为https访问。（需要您提供给域名证书和私钥）
 \e[0m"
 
+command -v curl > /dev/null || { echo "错误: 请安装 curl 工具"; exit 1; }
+command -v docker > /dev/null || { echo "错误: 请安装 Docker 工具"; exit 1; }
+docker info > /dev/null 2>&1 || { echo "错误: Docker 服务未启动"; exit 1; }
+
+# 下载文件的函数，带进度条和速度显示
+download_file() {
+    local url=$1
+    local output=$2
+
+    for attempt in {1..3}; do
+        echo "正在下载 $url (尝试 $attempt/3)..."
+        curl -# --fail --progress-bar -L -o "$output" "$url" && return
+        sleep 2
+    done
+    echo "错误: 无法下载文件 $url"
+    [ -f "$output" ] && rm "$output"
+    exit 1
+}
+
 GITHUB_USER="ddouweb"
 REPO="video_message"
 ARTIFACT_NAME="videoMsg"
-DEFAULT_INSTALL_DIR=$(pwd) #/workspaces/video_root
+DEFAULT_INSTALL_DIR=$(pwd)
 MY_IP=$(curl -s http://ifconfig.me)
+# 拷贝证书和私钥文件到目标目录，并生成新的路径
+CERT_BASENAME="cert.pem" #nginx cert
+KEY_BASENAME="key.pem" #nginx key
 read -p "请输入安装目录 [默认: $DEFAULT_INSTALL_DIR]: " INSTALL_DIR
 INSTALL_DIR=${INSTALL_DIR:-$DEFAULT_INSTALL_DIR}
 echo "安装目录: $INSTALL_DIR"
+
+CFG_DIR="/$INSTALL_DIR/cfg"
 
 if [ -e "$INSTALL_DIR/docker-compose.yml" ]; then
   echo "尝试先停止目标服务"
@@ -28,16 +52,32 @@ else
     echo "目录已存在: $INSTALL_DIR"
 fi
 
-read -p "请输入接收消息端口号 [默认: 80]: " MSG_PORT
-MSG_PORT=${MSG_PORT:-80}
-echo "接收消息端口号: $MSG_PORT"
+if [ ! -d "$CFG_DIR" ]; then
+    echo "配置目录不存在，正在创建..."
+    mkdir -p "$CFG_DIR" || { echo "无法创建目录，请检查权限！"; exit 1; }
+else
+    echo "配置目录已存在: $CFG_DIR"
+fi
 
-read -p "请输入访问图片资源端口号 [默认: 443]（如果不使用ssl,则公用消息接收端口号）: " IMG_PORT
-IMG_PORT=${IMG_PORT:-443}
-echo "访问图片资源端口号: $IMG_PORT"
+# 是否配置 SSL
+read -p "是否使用更安全的https？(y/n) [默认: n]: " CONFIGURE_SSL
+CONFIGURE_SSL=${CONFIGURE_SSL:-n}
+MY_DOMAIN=${MY_DOMAIN:-${MY_IP}}
 
-IMG_URL="http://${MY_IP}:${MSG_PORT}/img" 
-HOOK_URL="http://${MY_IP}:${MSG_PORT}/video_message/webhook"
+read -p "请输入对外暴露端口号 [默认: 8000]: " BASE_PORT
+BASE_PORT=${BASE_PORT:-8000}
+echo "接收消息端口号: $BASE_PORT"
+
+
+IMG_URL="http://${MY_IP}:${BASE_PORT}/img" 
+HOOK_URL="http://${MY_IP}:${BASE_PORT}/video_message/webhook"
+
+if [[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]]; then
+  read -p "请输入服务器域名[默认:localhost]: " MY_DOMAIN
+  MY_DOMAIN=${MY_DOMAIN:-localhost}
+  IMG_URL="https://${MY_DOMAIN}:${BASE_PORT}/img"
+  HOOK_URL="https://${MY_DOMAIN}:${BASE_PORT}/video_message/webhook"
+fi
 
 while true; do
     read -p "请输入 pushPlus 的 token: " PUSH_TOKEN
@@ -56,60 +96,49 @@ echo "pushPlus的群组编码: $PUSH_CODE"
 echo "下载安装所需的文件："
 
 # 下载二进制文件
-if ! curl -sL -f --retry 3 --retry-delay 5 -o "$INSTALL_DIR/$ARTIFACT_NAME" "https://github.com/$GITHUB_USER/$REPO/releases/download/latest/$ARTIFACT_NAME"; then
-    echo "错误: 无法下载 $ARTIFACT_NAME。请检查 URL 和网络连接。"
-    exit 1
-fi
-
-# 下载 MariaDB 初始化文件
-if ! curl -sL -f --retry 3 --retry-delay 5 -o "$INSTALL_DIR/mariadb-init.sql" "https://raw.githubusercontent.com/$GITHUB_USER/$REPO/master/mariadb-init.sql"; then
-    echo "错误: 无法下载 MariaDB 初始化文件。请检查 URL 和网络连接。"
-    exit 1
-fi
-
-# 下载 nginx 配置文件
-if ! curl -sL -f --retry 3 --retry-delay 5 -o "$INSTALL_DIR/nginx-default.conf" "https://raw.githubusercontent.com/$GITHUB_USER/$REPO/master/nginx.conf"; then
-    echo "错误: 无法下载 MariaDB 初始化文件。请检查 URL 和网络连接。"
-    exit 1
-fi
+download_file "https://github.com/$GITHUB_USER/$REPO/releases/download/latest/$ARTIFACT_NAME" $INSTALL_DIR/$ARTIFACT_NAME
+download_file "https://raw.githubusercontent.com/$GITHUB_USER/$REPO/master/mariadb-init.sql" "$CFG_DIR/mariadb-init.sql"
+#download_file "https://raw.githubusercontent.com/$GITHUB_USER/$REPO/master/nginx.conf" "$CFG_DIR/nginx-default.conf"
 
 # 为下载的二进制文件添加可执行权限
 chmod +x "$INSTALL_DIR/$ARTIFACT_NAME"
 
-
-# 是否配置 SSL
-read -p "是否需要使用更安全的https？(y/n) [默认: n]: " CONFIGURE_SSL
-CONFIGURE_SSL=${CONFIGURE_SSL:-n}
-
 # 生成 Nginx 配置
 if [[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]]; then
-
-    read -p "请输入服务器域名: " MY_DOMAIN
-    IMG_URL="https://${MY_DOMAIN}:${IMG_PORT}/img"
-    HOOK_URL="https://${MY_DOMAIN}:${IMG_PORT}/video_message/webhook"
-
-    read -p "请输入 SSL 证书文件的完整路径: " CERT_PATH
+    read -p "请输入 SSL 证书文件的路径 (.cert 或 .pem 或 .crt): " CERT_PATH
     while [[ ! -f "$CERT_PATH" ]]; do
-        echo "证书文件不存在，请重新输入。"
-        read -p "请输入 SSL 证书文件的完整路径: " CERT_PATH
+        read -p "证书文件不存在，请重新输入 SSL 证书文件的路径 (.cert 或 .pem 或 .crt): " CERT_PATH
     done
     echo "证书路径: $CERT_PATH"
 
-    read -p "请输入 SSL 私钥文件的完整路径: " KEY_PATH
+    if [[ "$CERT_PATH" == *.crt ]]; then
+      NEW_CERT_PATH="${CFG_DIR}/cert.pem"
+      cp "$CERT_PATH" "$NEW_CERT_PATH"
+      CERT_BASENAME="cert.pem"
+      echo "转换 .crt 文件为 .pem 格式: $NEW_CERT_PATH"
+    fi
+
+
+    read -p "请输入 SSL 私钥文件的路径 (.key 或者 .pem): " KEY_PATH
     while [[ ! -f "$KEY_PATH" ]]; do
-        echo "私钥文件不存在，请重新输入。"
-        read -p "请输入 SSL 私钥文件的完整路径: " KEY_PATH
+        read -p "私钥文件不存在，请重新输入 SSL 私钥文件的路径 (.key 或者 .pem): " KEY_PATH
     done
     echo "私钥路径: $KEY_PATH"
 
-    # 更新 Nginx 配置文件为 SSL 版本
-    SSL_CONFIG="
+    CERT_BASENAME=$(basename "$CERT_PATH")
+    KEY_BASENAME=$(basename "$KEY_PATH")
+
+    cp "$CERT_PATH" "$CFG_DIR/$CERT_BASENAME" || { echo "拷贝证书失败！"; exit 1; }
+    cp "$KEY_PATH" "$CFG_DIR/$KEY_BASENAME" || { echo "拷贝私钥失败！"; exit 1; }
+fi
+
+# 更新 Nginx 配置文件为 SSL 版本
+SSL_CONFIG="
 server {
-    listen 80;
-    listen 443 ssl http2;
-    server_name _;
-    ssl_certificate $CERT_PATH;
-    ssl_certificate_key $KEY_PATH;
+    listen $([[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]] && echo "443 ssl http2" || echo "80");
+    server_name $MY_DOMAIN;
+    $([[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]] && echo "ssl_certificate /etc/nginx/ssl/$CERT_BASENAME;")
+    $([[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]] && echo "ssl_certificate_key /etc/nginx/ssl/$KEY_BASENAME;")
     root /usr/share/nginx/html;
     location ^~/img/ {
         try_files \$uri \$uri/ =404;
@@ -123,23 +152,14 @@ server {
     }
 }
 "
-echo "重新生成nginx ssl 配置..."
-echo "$DEFAULT_CONFIG" > "$INSTALL_DIR/nginx-default.conf"
-echo "Nginx 配置已保存到 $INSTALL_DIR/nginx-default.conf"
-fi
+echo "生成nginx ssl 配置..."
+echo "$SSL_CONFIG" > "$CFG_DIR/nginx-default.conf"
+echo "Nginx 配置已保存到 $CFG_DIR/nginx-default.conf"
+chmod 600 "$CFG_DIR/nginx-default.conf"
 
 echo "创建 Docker Compose 配置文件..."
 cat <<EOF > $INSTALL_DIR/docker-compose.yml
 services:
-  nginx:
-    image: nginx:1.20.2-alpine
-    container_name: nginx
-    volumes:
-      - $INSTALL_DIR/nginx-default.conf:/etc/nginx/conf.d/default.conf  # 挂载 Nginx 配置文件
-    ports:
-      - "$IMG_PORT:443"
-      - "$MSG_PORT:80"
-    
   redis:
     image: redis:7.4.1-alpine
     container_name: redis
@@ -157,7 +177,7 @@ services:
       TZ: Asia/Shanghai
     command: --lower-case-table-names=1
     volumes:
-      - $INSTALL_DIR/mariadb-init.sql:/docker-entrypoint-initdb.d/init.sql  # 挂载初始化 SQL 文件
+      - $CFG_DIR/mariadb-init.sql:/docker-entrypoint-initdb.d/init.sql  # 挂载初始化 SQL 文件
       - $INSTALL_DIR/docker-data/mariadb:/var/lib/mysql
 
   video_message:
@@ -174,10 +194,25 @@ services:
       - $INSTALL_DIR/$ARTIFACT_NAME:/app:ro #应用可执行文件
       - $INSTALL_DIR/his_path:/data/his_path:rw  #存放历史截图
       - $INSTALL_DIR/last_path:/data/last_path:rw #存放最新的截图
+  nginx:
+    image: nginx:1.20.2-alpine
+    container_name: nginx
+    ports:
+      - "${BASE_PORT}:$([[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]] && echo 443 || echo 80)"
+    volumes:
+      - $CFG_DIR/nginx-default.conf:/etc/nginx/conf.d/default.conf:rs  # 挂载 Nginx 配置文件
+      - $INSTALL_DIR/last_path:/usr/share/nginx/html/img:ro #通过nginx访问图片资源    
 EOF
 
+if [[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]]; then
+  echo "      - $CFG_DIR/$CERT_BASENAME:/etc/nginx/ssl/$CERT_BASENAME:ro" >> $INSTALL_DIR/docker-compose.yml
+  echo "      - $CFG_DIR/$KEY_BASENAME:/etc/nginx/ssl/$KEY_BASENAME:ro" >> $INSTALL_DIR/docker-compose.yml
+fi
+echo "生成 Docker Compose 配置文件到 $INSTALL_DIR/docker-compose.yml"
 echo "启动 Docker Compose..."
 docker compose -f $INSTALL_DIR/docker-compose.yml up -d
-echo "Installation complete. The application is running."
-
+sleep 3
+echo "应用安装完成。。。"
+docker compose -f "$INSTALL_DIR/docker-compose.yml" logs --tail 200 video_message
 echo "请配置萤石云/云信令/消息推送的webhook回调地址为: $HOOK_URL"
+echo "如需卸载，请执行：docker compose -f "$INSTALL_DIR/docker-compose.yml" down"
