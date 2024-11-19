@@ -30,10 +30,18 @@
 运行以下命令，根据提示输入必要信息，即可完成安装：
 
 ```bash
+bash <(curl -s https://raw.githubusercontent.com/ddouweb/video_message/simple/install.sh)
+```
+
+### 2.2 一键安装(如果你需要记录你的消息事件)
+
+运行以下命令，根据提示输入必要信息，即可完成安装：
+
+```bash
 bash <(curl -s https://raw.githubusercontent.com/ddouweb/video_message/master/install.sh)
 ```
 
-### 2.2 管理服务
+### 2.3 管理服务
 
 #### 启动服务
 
