@@ -91,7 +91,34 @@ if [[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]]; then
   MY_DOMAIN=${MY_DOMAIN:-localhost}
   IMG_URL="https://${MY_DOMAIN}:${BASE_PORT}/img"
   HOOK_URL="https://${MY_DOMAIN}:${BASE_PORT}/video_message/webhook"
+
+  read -p "请输入 SSL 证书文件的路径 (.cert 或 .pem 或 .crt): " CERT_PATH
+  while [[ ! -f "$CERT_PATH" ]]; do
+    read -p "证书文件不存在，请重新输入 SSL 证书文件的路径 (.cert 或 .pem 或 .crt): " CERT_PATH
+  done
+  echo "证书路径: $CERT_PATH"
+
+  if [[ "$CERT_PATH" == *.crt ]]; then
+    NEW_CERT_PATH="${CFG_DIR}/cert.pem"
+    cp "$CERT_PATH" "$NEW_CERT_PATH"
+    CERT_BASENAME="cert.pem"
+    echo "转换 .crt 文件为 .pem 格式: $NEW_CERT_PATH"
+  fi
+
+
+  read -p "请输入 SSL 私钥文件的路径 (.key 或者 .pem): " KEY_PATH
+  while [[ ! -f "$KEY_PATH" ]]; do
+    read -p "私钥文件不存在，请重新输入 SSL 私钥文件的路径 (.key 或者 .pem): " KEY_PATH
+  done
+  echo "私钥路径: $KEY_PATH"
+
+  CERT_BASENAME=$(basename "$CERT_PATH")
+  KEY_BASENAME=$(basename "$KEY_PATH")
+
+  cp "$CERT_PATH" "$CFG_DIR/$CERT_BASENAME" || { echo "拷贝证书失败！"; exit 1; }
+  cp "$KEY_PATH" "$CFG_DIR/$KEY_BASENAME" || { echo "拷贝私钥失败！"; exit 1; }
 fi
+
 echo
 
 while true; do
@@ -111,37 +138,7 @@ echo "即将下载安装所需的文件..."
 download_file "https://github.com/$GITHUB_USER/$REPO/releases/download/latest/$ARTIFACT_NAME" $INSTALL_DIR/$ARTIFACT_NAME
 echo
 # 为下载的二进制文件添加可执行权限
-chmod +x "$INSTALL_DIR/$ARTIFACT_NAME"
-
-# 生成 Nginx 配置
-if [[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]]; then
-    read -p "请输入 SSL 证书文件的路径 (.cert 或 .pem 或 .crt): " CERT_PATH
-    while [[ ! -f "$CERT_PATH" ]]; do
-        read -p "证书文件不存在，请重新输入 SSL 证书文件的路径 (.cert 或 .pem 或 .crt): " CERT_PATH
-    done
-    echo "证书路径: $CERT_PATH"
-
-    if [[ "$CERT_PATH" == *.crt ]]; then
-      NEW_CERT_PATH="${CFG_DIR}/cert.pem"
-      cp "$CERT_PATH" "$NEW_CERT_PATH"
-      CERT_BASENAME="cert.pem"
-      echo "转换 .crt 文件为 .pem 格式: $NEW_CERT_PATH"
-    fi
-
-
-    read -p "请输入 SSL 私钥文件的路径 (.key 或者 .pem): " KEY_PATH
-    while [[ ! -f "$KEY_PATH" ]]; do
-        read -p "私钥文件不存在，请重新输入 SSL 私钥文件的路径 (.key 或者 .pem): " KEY_PATH
-    done
-    echo "私钥路径: $KEY_PATH"
-
-    CERT_BASENAME=$(basename "$CERT_PATH")
-    KEY_BASENAME=$(basename "$KEY_PATH")
-
-    cp "$CERT_PATH" "$CFG_DIR/$CERT_BASENAME" || { echo "拷贝证书失败！"; exit 1; }
-    cp "$KEY_PATH" "$CFG_DIR/$KEY_BASENAME" || { echo "拷贝私钥失败！"; exit 1; }
-fi
-echo
+chmod +x "$INSTALL_DIR/$ARTIFACT_NAME
 
 # 更新 Nginx 配置文件为 SSL 版本
 SSL_CONFIG="
