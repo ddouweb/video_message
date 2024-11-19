@@ -94,27 +94,6 @@ if [[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]]; then
 fi
 echo
 
-while true; do
-    read -p "请输入 pushPlus 的 token: " PUSH_TOKEN
-    if [[ -z "$PUSH_TOKEN" ]]; then
-        echo "错误: token 不能为空，请重新输入！"
-    else
-        break
-    fi
-done
-read -p "请输入pushPlus的群组编码 [默认: video]: " PUSH_CODE
-PUSH_CODE=${PUSH_CODE:-video}
-echo
-
-echo "即将下载安装所需的文件..."
-# 下载二进制文件
-download_file "https://github.com/$GITHUB_USER/$REPO/releases/download/latest/$ARTIFACT_NAME" $INSTALL_DIR/$ARTIFACT_NAME
-download_file "https://raw.githubusercontent.com/$GITHUB_USER/$REPO/master/mariadb-init.sql" "$CFG_DIR/mariadb-init.sql"
-#download_file "https://raw.githubusercontent.com/$GITHUB_USER/$REPO/master/nginx.conf" "$CFG_DIR/nginx-default.conf"
-echo
-# 为下载的二进制文件添加可执行权限
-chmod +x "$INSTALL_DIR/$ARTIFACT_NAME"
-
 # 生成 Nginx 配置
 if [[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]]; then
     read -p "请输入 SSL 证书文件的路径 (.cert 或 .pem 或 .crt): " CERT_PATH
@@ -144,6 +123,27 @@ if [[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]]; then
     cp "$KEY_PATH" "$CFG_DIR/$KEY_BASENAME" || { echo "拷贝私钥失败！"; exit 1; }
 fi
 echo
+
+while true; do
+    read -p "请输入 pushPlus 的 token: " PUSH_TOKEN
+    if [[ -z "$PUSH_TOKEN" ]]; then
+        echo "错误: token 不能为空，请重新输入！"
+    else
+        break
+    fi
+done
+read -p "请输入pushPlus的群组编码 [默认: video]: " PUSH_CODE
+PUSH_CODE=${PUSH_CODE:-video}
+echo
+
+echo "即将下载安装所需的文件..."
+# 下载二进制文件
+download_file "https://github.com/$GITHUB_USER/$REPO/releases/download/latest/$ARTIFACT_NAME" $INSTALL_DIR/$ARTIFACT_NAME
+download_file "https://raw.githubusercontent.com/$GITHUB_USER/$REPO/master/mariadb-init.sql" "$CFG_DIR/mariadb-init.sql"
+#download_file "https://raw.githubusercontent.com/$GITHUB_USER/$REPO/master/nginx.conf" "$CFG_DIR/nginx-default.conf"
+echo
+# 为下载的二进制文件添加可执行权限
+chmod +x "$INSTALL_DIR/$ARTIFACT_NAME"
 
 # 更新 Nginx 配置文件为 SSL 版本
 SSL_CONFIG="
