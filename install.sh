@@ -14,7 +14,20 @@ docker info > /dev/null 2>&1 || { echo "错误: Docker 服务未启动"; exit 1;
 download_file() {
     local url=$1
     local output=$2
-
+    # 检查目标文件是否已存在
+    if [ -f "$output" ]; then
+        read -p "文件 $output 已存在,是否覆盖？(y/n)[默认: n]: " choice
+        choice=${choice:-n}
+        case "$choice" in
+            y|Y )
+                echo "覆盖文件 $output..."
+                ;;
+            * )
+                echo "保留现有文件 $output，跳过下载。"
+                return
+                ;;
+        esac
+    fi
     for attempt in {1..3}; do
         echo "正在下载 $url (尝试 $attempt/3)..."
         curl -# --fail --progress-bar -L -o "$output" "$url" && return
@@ -36,13 +49,15 @@ KEY_BASENAME="key.pem" #nginx key
 read -p "请输入安装目录 [默认: $DEFAULT_INSTALL_DIR]: " INSTALL_DIR
 INSTALL_DIR=${INSTALL_DIR:-$DEFAULT_INSTALL_DIR}
 echo "安装目录: $INSTALL_DIR"
+echo
 
-CFG_DIR="/$INSTALL_DIR/cfg"
+CFG_DIR="$INSTALL_DIR/cfg"
 
 if [ -e "$INSTALL_DIR/docker-compose.yml" ]; then
   echo "尝试先停止目标服务"
   docker compose -f "$INSTALL_DIR/docker-compose.yml" down
 fi
+echo
 
 # 检查是否有权限创建目录
 if [ ! -d "$INSTALL_DIR" ]; then
@@ -58,6 +73,8 @@ if [ ! -d "$CFG_DIR" ]; then
 else
     echo "配置目录已存在: $CFG_DIR"
 fi
+echo
+
 
 # 是否配置 SSL
 read -p "是否使用更安全的https？(y/n) [默认: n]: " CONFIGURE_SSL
@@ -66,9 +83,6 @@ MY_DOMAIN=${MY_DOMAIN:-${MY_IP}}
 
 read -p "请输入对外暴露端口号 [默认: 8000]: " BASE_PORT
 BASE_PORT=${BASE_PORT:-8000}
-echo "接收消息端口号: $BASE_PORT"
-
-
 IMG_URL="http://${MY_IP}:${BASE_PORT}/img" 
 HOOK_URL="http://${MY_IP}:${BASE_PORT}/video_message/webhook"
 
@@ -78,6 +92,7 @@ if [[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]]; then
   IMG_URL="https://${MY_DOMAIN}:${BASE_PORT}/img"
   HOOK_URL="https://${MY_DOMAIN}:${BASE_PORT}/video_message/webhook"
 fi
+echo
 
 while true; do
     read -p "请输入 pushPlus 的 token: " PUSH_TOKEN
@@ -87,19 +102,16 @@ while true; do
         break
     fi
 done
-echo "pushPlus token: $PUSH_TOKEN"
-
 read -p "请输入pushPlus的群组编码 [默认: video]: " PUSH_CODE
 PUSH_CODE=${PUSH_CODE:-video}
-echo "pushPlus的群组编码: $PUSH_CODE"
+echo
 
-echo "下载安装所需的文件："
-
+echo "即将下载安装所需的文件..."
 # 下载二进制文件
 download_file "https://github.com/$GITHUB_USER/$REPO/releases/download/latest/$ARTIFACT_NAME" $INSTALL_DIR/$ARTIFACT_NAME
 download_file "https://raw.githubusercontent.com/$GITHUB_USER/$REPO/master/mariadb-init.sql" "$CFG_DIR/mariadb-init.sql"
 #download_file "https://raw.githubusercontent.com/$GITHUB_USER/$REPO/master/nginx.conf" "$CFG_DIR/nginx-default.conf"
-
+echo
 # 为下载的二进制文件添加可执行权限
 chmod +x "$INSTALL_DIR/$ARTIFACT_NAME"
 
@@ -131,6 +143,7 @@ if [[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]]; then
     cp "$CERT_PATH" "$CFG_DIR/$CERT_BASENAME" || { echo "拷贝证书失败！"; exit 1; }
     cp "$KEY_PATH" "$CFG_DIR/$KEY_BASENAME" || { echo "拷贝私钥失败！"; exit 1; }
 fi
+echo
 
 # 更新 Nginx 配置文件为 SSL 版本
 SSL_CONFIG="
@@ -152,23 +165,14 @@ server {
     }
 }
 "
-echo "生成nginx ssl 配置..."
 echo "$SSL_CONFIG" > "$CFG_DIR/nginx-default.conf"
-echo "Nginx 配置已保存到 $CFG_DIR/nginx-default.conf"
+echo "Nginx 配置文件已保存到 $CFG_DIR/nginx-default.conf"
 chmod 600 "$CFG_DIR/nginx-default.conf"
+echo
 
 echo "创建 Docker Compose 配置文件..."
 cat <<EOF > $INSTALL_DIR/docker-compose.yml
 services:
-  redis:
-    image: redis:7.4.1-alpine
-    container_name: redis
-    environment:
-      REDIS_PASSWORD: 123456
-    command: redis-server --requirepass 123456
-    volumes:
-      - $INSTALL_DIR/docker-data/redis:/data
-
   mariadb:
     image: mariadb:10.6.14
     container_name: mariadb
@@ -208,11 +212,21 @@ if [[ "$CONFIGURE_SSL" =~ ^[Yy]$ ]]; then
   echo "      - $CFG_DIR/$CERT_BASENAME:/etc/nginx/ssl/$CERT_BASENAME:ro" >> $INSTALL_DIR/docker-compose.yml
   echo "      - $CFG_DIR/$KEY_BASENAME:/etc/nginx/ssl/$KEY_BASENAME:ro" >> $INSTALL_DIR/docker-compose.yml
 fi
-echo "生成 Docker Compose 配置文件到 $INSTALL_DIR/docker-compose.yml"
+echo "Docker Compose 文件已保存到 $INSTALL_DIR/docker-compose.yml"
 echo "启动 Docker Compose..."
 docker compose -f $INSTALL_DIR/docker-compose.yml up -d
-sleep 3
-echo "应用安装完成。。。"
+echo "检查服务是否启动..."
+sleep 5
+
+echo "验证 webhook 地址: $HOOK_URL"
+HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}" --request POST --header 'Content-Type: application/json' --data-raw '{}' --connect-timeout 8 --max-time 8  "$HOOK_URL")
+if [ "$HTTP_STATUS" -ne 200 ]; then
+    echo "错误: 无法访问 $HOOK_URL，HTTP 状态码: $HTTP_STATUS,请检查服务启动状态和防火墙"
+    exit 1
+else
+    echo "服务运行正常，webhook 地址可访问。"
+fi
+
 docker compose -f "$INSTALL_DIR/docker-compose.yml" logs --tail 200 video_message
 echo "请配置萤石云/云信令/消息推送的webhook回调地址为: $HOOK_URL"
 echo "如需卸载，请执行：docker compose -f "$INSTALL_DIR/docker-compose.yml" down"

@@ -29,6 +29,7 @@ CREATE TABLE `message_img` (
   `data_type` VARCHAR(31) DEFAULT NULL,
   `create_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
   `read_count` INT UNSIGNED DEFAULT 0,
+  `data_dir` varchar(10) DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB AUTO_INCREMENT=18 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 

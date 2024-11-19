@@ -7,15 +7,6 @@ services:
     ports:
       - "443:443"
       - "80:80"
-    
-  redis:
-    image: redis:7.4.1-alpine
-    container_name: redis
-    environment:
-      REDIS_PASSWORD: 123456
-    command: redis-server --requirepass 123456
-    volumes:
-      - /data/video_root/docker-data/redis:/data
 
   mariadb:
     image: mariadb:10.6.14
