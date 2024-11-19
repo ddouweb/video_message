@@ -11,6 +11,8 @@ serde_json = "1.0"
 reqwest = { version = "0.11.24", features = ["json"] }
 dotenv = "0.15.0"
 chrono = "0.4"
+openssl = "0.10.64"
+openssl-sys = { version = "0.9.102", features = ["vendored"] }
 
 [profile.release]
 lto = true
