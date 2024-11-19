@@ -202,7 +202,7 @@ echo "检查服务是否启动..."
 sleep 5
 
 echo "验证 webhook 地址: $HOOK_URL"
-HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}" --request POST --header 'Content-Type: application/json' --data-raw '{}' --connect-timeout 8 --max-time 8  "$HOOK_URL")
+HTTP_STATUS=$(curl -o /dev/null -s -w "%{http_code}" --request POST --header 'Content-Type: application/json' -d '{}' --connect-timeout 8 --max-time 8  "$HOOK_URL")
 if [ "$HTTP_STATUS" -ne 200 ]; then
     echo "错误: 无法访问 $HOOK_URL，HTTP 状态码: $HTTP_STATUS,请检查服务启动状态和防火墙"
     exit 1
