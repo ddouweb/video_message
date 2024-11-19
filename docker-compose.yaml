@@ -8,22 +8,10 @@ services:
       - "443:443"
       - "80:80"
 
-  mariadb:
-    image: mariadb:10.6.14
-    container_name: mariadb
-    environment:
-      MYSQL_ROOT_PASSWORD: 123456
-      TZ: Asia/Shanghai
-    command: --lower-case-table-names=1
-    volumes:
-      - /data/video_root/mariadb-init.sql:/docker-entrypoint-initdb.d/init.sql  # 挂载初始化 SQL 文件
-      - /data/video_root/docker-data/mariadb:/var/lib/mysql
-
   video_message:
     image: webtao/scratch:zoneinfo
     container_name: video_message
     environment:
-      DATABASE_URL: mysql://video:123456@mariadb:3306/video?timezone=Asia/Shanghai
       APP_API_TOKEN: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  #PUSH_PLUS密钥
       APP_API_TOPIC: video                            #PUSH_PLUS群组编码
       APP_IMG_SERVER: https://img.xxxxxxxxxxxxxxx.cn/img #收到消息后，消息内图片的url地址前缀

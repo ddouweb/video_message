@@ -1,5 +1,4 @@
 use crate::{
-    db,
     models::{
         chan_msg::ChanMsg,
         models::{AppState, Body, Message},
@@ -12,6 +11,7 @@ use std::env;
 use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::time;
+
 pub async fn webhook(
     req: HttpRequest,
     body: web::Bytes,
@@ -49,7 +49,7 @@ pub async fn handle_request(
 pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
     //初始化系统信息
     dotenv::dotenv().ok();
-    let mut app = ChanMsg::new(db::get_db_pool().await);
+    let mut app = ChanMsg::new();
 
     let timeout = env::var("APP_API_TIMEOUT")
         .unwrap_or_else(|_| "600".to_owned())
@@ -85,13 +85,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
     println!("图片服务器地址: {img_server}");
 
     let now = chrono::Local::now().time();
-    if now >= start_time && now <= end_time {
-        println!(
-            "当前时间{}:{}在{start_time}到{end_time}之间",
-            chrono::Local::now().hour(),
-            chrono::Local::now().minute()
-        );
-    } else {
+    if now < start_time || now > end_time {
         println!(
             "当前时间{}:{}不在{start_time}到{end_time}之间",
             chrono::Local::now().hour(),
@@ -107,26 +101,16 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
     loop {
         match time::timeout(time::Duration::from_secs(timeout), receiver.recv()).await {
             Ok(Some(msg)) => {
-                let mut data_type: &str = "Unknown";
                 if let Some(header) = msg.header {
                     let msg_id = header.get_message_id();
-                    data_type = match msg.body {
+                    match msg.body {
                         Some(ref body) => {
                             match body {
                                 Body::WarnBody(data) => {
                                     for picture in data.get_picture_list() {
-                                        let id = crate::db::insert_image_url(
-                                            app.get_db_pool(),
-                                            msg_id,
-                                            data.get_channel_name(),
-                                            picture.get_url(),
-                                            body.get_name(),
-                                            &date_dir,
-                                        )
-                                        .await;
-                                        app.save_image(id, picture.get_url_string(),&date_dir).await;
+                                        app.save_image(msg_id, picture.get_url_string(),&date_dir).await;
                                         //app.save_image(id,picture.get_url_string()).await;
-                                        urls.push(format!("{img_server}/{id}.jpg"));
+                                        urls.push(format!("{img_server}/{msg_id}.jpg"));
                                         pic_count += 1;
                                     }
                                 }
@@ -136,32 +120,15 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                 }
                                 Body::Call(data) => {
                                     app.send(data.get_title(), data.get_message()).await;
-                                    crate::db::insert_image_url(
-                                        app.get_db_pool(),
-                                        msg_id,
-                                        data_type,
-                                        data.get_image(),
-                                        body.get_name(),
-                                        &date_dir,
-                                    )
-                                    .await;
                                 }
                                 Body::Unknown(_) => {
                                     //println!("返回的信息: {}", data);
                                 }
                                 _ => {}
                             };
-                            body.get_name()
                         }
-                        None => "Unknown",
+                        None => (),
                     };
-                    crate::db::insert_message(
-                        app.get_db_pool(),
-                        &header,
-                        msg.body.as_ref(),
-                        data_type,
-                    )
-                    .await;
                     // 检查消息数量是否达到指定条数
                     if pic_count >= max_pic_count {
                         let combined_messages = urls

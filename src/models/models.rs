@@ -30,20 +30,6 @@ impl Header {
     pub fn get_message_id(&self) -> &String {
         &self.message_id
     }
-
-    pub fn get_device_id(&self) -> &String {
-        &self.device_id
-    }
-    pub fn get_channel_no(&self) -> &i32 {
-        &self.channel_no
-    }
-
-    pub fn get_type(&self) -> &String {
-        &self.r#type
-    }
-    pub fn get_message_time(&self) -> &i64 {
-        &self.message_time
-    }
 }
 
 #[derive(Serialize, Deserialize, Debug,Clone)]
@@ -61,27 +47,4 @@ pub enum Body {
 #[derive(Debug)]
 pub struct AppState {
     pub sender: Sender<Message>,
-}
-// impl AppState {
-//     pub fn new(
-//         sender: Sender<Message>,
-//     ) -> Self {
-//         AppState {
-//             sender,
-//         }
-//     }
-// }
-
-impl Body {
-    pub fn get_name(&self) -> &str {
-        match self {
-            Body::DataIndex(_) => "DataIndex",
-            Body::ReportBody(_) => "ReportBody",
-            Body::WarnBody(_) => "WarnBody",
-            Body::NationalAlarmBody(_) => "NationalAlarmBody",
-            Body::OnOffLine(_) => "OnOffLine",
-            Body::Call(_) => "Call",
-            Body::Unknown(_) => "Body::Unknown",
-        }
-    }
 }

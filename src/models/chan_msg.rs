@@ -1,20 +1,18 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct ChanMsg {
-    db_pool: sqlx::mysql::MySqlPool,
     http_client: reqwest::Client,
     api_send_count: std::sync::Mutex<u8>, //接口调用次数,不允许调用时，设置当前值为最大值。
     api_max_count: u8,                    //接口可调用的最大次数
     api_token: String,                    //apiToken
     api_topic: String,                    //消息主题通道
-    //pic_size: u8,                         //一次消息最大包含几张图片信息
     use_time: chrono::prelude::NaiveDate, //API调用时间
     his_path: String,                     //历史图片的保存路径
     last_path: String,                    //最新图片的保存路径
                                           //img_server: String,                   //图片服务器地址
 }
 impl ChanMsg {
-    pub fn new(db_pool: sqlx::mysql::MySqlPool) -> Self {
+    pub fn new() -> Self {
         let his_path =
             std::env::var("APP_IMG_PATH_HIS").unwrap_or_else(|_| "/data/his_path".to_owned());
         let last_path =
@@ -22,19 +20,9 @@ impl ChanMsg {
         std::fs::create_dir_all(&his_path).unwrap();
         std::fs::create_dir_all(&last_path).unwrap();
         ChanMsg {
-            db_pool,
             http_client: reqwest::Client::new(),
-            // http_client: reqwest::Client::builder()
-            //     .pool_max_idle_per_host(10) // 设置每个主机最大的空闲连接数
-            //     .pool_idle_timeout(std::time::Duration::from_secs(30)) // 设置连接的空闲超时时间为30秒
-            //     .build()
-            //     .unwrap(),
             api_send_count: std::sync::Mutex::new(0),
             api_topic: std::env::var("APP_API_TOPIC").unwrap_or_else(|_| "video".to_owned()),
-            /*pic_size: std::env::var("APP_MESSAGE_SIZE")
-                .unwrap_or_else(|_| "10".to_owned())
-                .parse::<u8>()
-                .expect("设置APP_MESSAGE_SIZE错误!"),*/
             api_max_count: std::env::var("APP_API_COUNT")
                 .unwrap_or_else(|_| "200".to_owned())
                 .parse::<u8>()
@@ -42,12 +30,8 @@ impl ChanMsg {
             api_token: std::env::var("APP_API_TOKEN").expect("未设置APP_API_TOKEN"),
             use_time: chrono::Local::now().naive_local().date(),
             his_path: his_path,
-            last_path: last_path,
-            //img_server: std::env::var("APP_IMG_SERVER").expect("未设置APP_IMG_SERVER"),
+            last_path: last_path
         }
-    }
-    pub fn get_db_pool(&self) -> &sqlx::Pool<sqlx::MySql> {
-        &self.db_pool
     }
     fn can_send(&mut self) -> bool {
         let current_date = chrono::prelude::Local::now().naive_local().date();
@@ -78,16 +62,10 @@ impl ChanMsg {
                         if code == 999 || code == 900 || code == 903 {
                             self.disable_api_send();
                         }
-                        // else {
-                        //     // 请求成功，继续处理其他逻辑
-                        //     let data = data.get("data").unwrap();
-                        //     println!("api接口返回成功:{data}");
-                        // }
                     }
                 }
                 Err(e) => {
                     println!("接口请求出现错误：{}", e);
-                    //self.disable_api_send();
                 }
             }
         } else {
@@ -118,12 +96,9 @@ impl ChanMsg {
         );
         *count = self.api_max_count;
     }
-    // pub fn get_pic_size(&self) -> u8 {
-    //     self.pic_size
-    // }
 
     //下载图片。
-    pub(crate) async fn save_image(&self, id: u64, img_url: String, data_dir:&str) {
+    pub(crate) async fn save_image(&self, id: &str, img_url: String, data_dir:&str) {
         crate::util::save_image(&self.http_client,id, img_url, &self.last_path, &self.his_path,data_dir).await;
     }
 

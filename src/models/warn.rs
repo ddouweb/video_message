@@ -41,9 +41,6 @@ impl WarnBody {
     pub fn get_picture_list(&self)->&Vec<Picture>{
         &self.picture_list
     }
-    pub fn get_channel_name(&self)->&String{
-        &self.channel_name
-    }
 }
 #[derive(Debug, Deserialize, Serialize,Clone)]
 pub struct Picture {
@@ -53,10 +50,6 @@ pub struct Picture {
     url: String,
 }
 impl Picture {
-    pub fn get_url(&self)->&String{
-        &self.url
-    }
-
     pub fn get_url_string(&self)->String{
         self.url.clone()
     }

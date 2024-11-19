@@ -6,7 +6,6 @@ use std::sync::Mutex;
 
 mod util;
 mod models;
-mod db;
 mod handlers;
 mod routers;
 

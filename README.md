@@ -30,7 +30,7 @@
 运行以下命令，根据提示输入必要信息，即可完成安装：
 
 ```bash
-bash <(curl -s https://raw.githubusercontent.com/ddouweb/video_message/master/install.sh)
+bash <(curl -s https://raw.githubusercontent.com/ddouweb/video_message/simple/install.sh)
 ```
 
 ### 2.2 管理服务

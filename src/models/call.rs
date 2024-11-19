@@ -40,27 +40,12 @@ pub struct Call {
     timestamp: String,
 }
 impl Call {
-    // pub(crate) async fn push_call(
-    //     &self,
-    //     state: &Data<Arc<Mutex<AppState>>>,
-    //     msg_id: &str,
-    //     data_type: &str,
-    // ) {
-    //     //println!("debug:收到视频呼叫消息");
-    //     let message = format!("<img src='{}' />", &self.decrypted_picture);
-    //     //state.lock().unwrap().get_sender().send("视频呼叫消息".to_owned());
-    //     //crate::db::insert_image_url(state.lock().unwrap().get_db_pool(), msg_id,data_type, &self.decrypted_picture, data_type).await;
-    // }
     pub fn get_title(&self)->String{
         format!("视频呼叫消息")
     }
 
     pub fn get_message(&self)->String{
         format!("<img src='{}' />", &self.decrypted_picture)
-    }
-
-    pub fn get_image(&self)->&str{
-        &self.decrypted_picture
     }
 }
 

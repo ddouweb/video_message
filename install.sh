@@ -109,8 +109,6 @@ echo
 echo "即将下载安装所需的文件..."
 # 下载二进制文件
 download_file "https://github.com/$GITHUB_USER/$REPO/releases/download/latest/$ARTIFACT_NAME" $INSTALL_DIR/$ARTIFACT_NAME
-download_file "https://raw.githubusercontent.com/$GITHUB_USER/$REPO/master/mariadb-init.sql" "$CFG_DIR/mariadb-init.sql"
-#download_file "https://raw.githubusercontent.com/$GITHUB_USER/$REPO/master/nginx.conf" "$CFG_DIR/nginx-default.conf"
 echo
 # 为下载的二进制文件添加可执行权限
 chmod +x "$INSTALL_DIR/$ARTIFACT_NAME"
@@ -173,22 +171,10 @@ echo
 echo "创建 Docker Compose 配置文件..."
 cat <<EOF > $INSTALL_DIR/docker-compose.yml
 services:
-  mariadb:
-    image: mariadb:10.6.14
-    container_name: mariadb
-    environment:
-      MYSQL_ROOT_PASSWORD: 123456
-      TZ: Asia/Shanghai
-    command: --lower-case-table-names=1
-    volumes:
-      - $CFG_DIR/mariadb-init.sql:/docker-entrypoint-initdb.d/init.sql  # 挂载初始化 SQL 文件
-      - $INSTALL_DIR/docker-data/mariadb:/var/lib/mysql
-
   video_message:
     image: webtao/scratch:zoneinfo
     container_name: video_message
     environment:
-      DATABASE_URL: mysql://video:123456@mariadb:3306/video?timezone=Asia/Shanghai
       APP_API_TOKEN: $PUSH_TOKEN
       APP_API_TOPIC: $PUSH_CODE
       APP_IMG_SERVER: $IMG_URL

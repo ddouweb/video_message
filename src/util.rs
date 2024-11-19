@@ -20,7 +20,7 @@ pub async fn send_post_request(
 
 pub(crate) async fn save_image(
     _client: &reqwest::Client,
-    id: u64,
+    id: &str,
     img_url: String,
     last_path: &str,
     his_path: &str,
