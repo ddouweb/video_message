@@ -1,42 +1,56 @@
+# Video Message 安装与使用手册
+
+**Video Message** 是一款用于接收萤石云消息并将其发送到微信的工具。本手册将指导你如何在自己的机器上安装和使用它。
+
+---
+
+## 1. 准备工作
+
+在安装 **Video Message** 之前，请确保以下条件已满足：
+
+1. **Docker 环境**  
+   确保机器上已安装 Docker 客户端，并能够正常拉取镜像。
+
+2. **PushPlus 配置**  
+   准备好以下信息：
+    - PushPlus 用户 Token
+    - 群组编码
+
+3. **HTTPS 支持（推荐）**  
+   建议使用 HTTPS 访问服务：
+    - 准备好域名解析。
+    - 提供 Nginx 所需的 SSL 证书。
+
+---
+
+## 2. 安装与使用
+
+### 2.1 一键安装
+
+运行以下命令，根据提示输入必要信息，即可完成安装：
+
+```bash
+bash <(curl -s https://raw.githubusercontent.com/ddouweb/video_message/master/install.sh)
 ```
-services:
-  redis:
-    image: redis
-    container_name: redis
-    environment:
-      REDIS_PASSWORD: 123456
-    command: redis-server --requirepass 123456
-    ports:
-      - "6379:6379"
-    volumes:
-      - /data/docker-data/redis:/data
 
-  mariadb:
-    image: mariadb:10.6.14
-    container_name: mariadb
-    environment:
-      MYSQL_ROOT_PASSWORD: 123456
-      TZ: Asia/Shanghai
-    #  LOWER_CASE_TABLE_NAMES: 1
-    ports:
-      - "3306:3306"
-    command: --lower-case-table-names=1
-    volumes:
-      - /data/docker-data/mariadb:/var/lib/mysql
+### 2.2 管理服务
 
-  video_message:
-    image: webtao/scratch:zoneinfo
-    container_name: video_message
-    environment:
-      DATABASE_URL: mysql://video:123456@mariadb:3306/video?timezone=Asia/Shanghai
-      APP_API_TOKEN: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-      APP_IMG_SERVER: https://img.xxxxxxxxxxxxxxx.cn/img
-      APP_API_TIMEOUT: 600
-      APP_MESSAGE_SIZE: 50
-    ports:
-      - "8000:8000"
-    volumes:
-      - /data/apps/app:/app:ro
-      - /data/his_path:/data/his_path:rw
-      - /data/last_path:/data/last_path:rw
-```docker-compose.yaml
+#### 启动服务
+
+进入安装目录后，运行以下命令启动服务：
+
+```bash
+docker compose up
+```
+
+#### 停止服务/卸载服务
+
+进入安装目录后，运行以下命令启动服务：
+
+```bash
+docker compose down
+```
+
+----
+# 致谢
+[pushPlus](https://www.pushplus.plus/)
