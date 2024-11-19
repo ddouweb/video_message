@@ -37,7 +37,7 @@ bash <(curl -s https://raw.githubusercontent.com/ddouweb/video_message/simple/in
 
 #### 启动服务
 
-进入安装目录后，运行以下命令启动服务：
+进入安装目录后，运行以下命令：
 
 ```bash
 docker compose up
@@ -45,7 +45,7 @@ docker compose up
 
 #### 停止服务/卸载服务
 
-进入安装目录后，运行以下命令启动服务：
+进入安装目录后，运行以下命令：
 
 ```bash
 docker compose down
