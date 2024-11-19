@@ -138,7 +138,7 @@ echo "即将下载安装所需的文件..."
 download_file "https://github.com/$GITHUB_USER/$REPO/releases/download/simple-latest/$ARTIFACT_NAME" $INSTALL_DIR/$ARTIFACT_NAME
 echo
 # 为下载的二进制文件添加可执行权限
-chmod +x "$INSTALL_DIR/$ARTIFACT_NAME
+chmod +x "$INSTALL_DIR/$ARTIFACT_NAME"
 
 # 更新 Nginx 配置文件为 SSL 版本
 SSL_CONFIG="
