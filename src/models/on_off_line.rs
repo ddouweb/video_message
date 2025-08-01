@@ -47,9 +47,9 @@ impl OnOffLine {
     // }
     pub fn get_title(&self)->String{
         format!("设备[{}] {}",&self.device_name,
-                match self.msg_type.as_str() {
-                    DeviceStatus::Online => "已上线",
-                    DeviceStatus::Offline => "已离线",
+                match self.msg_type {
+                    "ONLINE" => "已上线",
+                    "OFFLINE" => "已离线",
                     _ => "未知状态"
                 })
     }
