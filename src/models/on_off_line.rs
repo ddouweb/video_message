@@ -46,10 +46,15 @@ impl OnOffLine {
     //     // }
     // }
     pub fn get_title(&self)->String{
-        format!("摄像头[{}] 状态消息",&self.device_name)
+        format!("设备[{}] {}",&self.device_name,
+                match self.msg_type.as_str() {
+                    DeviceStatus::Online => "已上线",
+                    DeviceStatus::Offline => "已离线",
+                    _ => "未知状态"
+                })
     }
 
     pub fn get_message(&self)->String{
-        format!("摄像头[{}] 于{}  状态变更为{}", &self.device_name, &self.occur_time, &self.msg_type)
+        format!("设备[{}] 于{}  状态变更为{}", &self.device_name, &self.occur_time, &self.msg_type)
     }
 }
