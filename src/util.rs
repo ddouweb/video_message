@@ -19,7 +19,7 @@ pub async fn send_post_request(
 }
 
 pub(crate) async fn save_image(
-    _client: &reqwest::Client,
+    client: &reqwest::Client,
     id: &str,
     img_url: String,
     last_path: &str,
@@ -36,18 +36,14 @@ pub(crate) async fn save_image(
             return;
         }
     };
-    //let empty_certificates: Vec<reqwest::Certificate> = Vec::new();
-    let response = match reqwest::Client::builder()
-        .danger_accept_invalid_certs(true)
-        .build()
-        .unwrap()
+    
+    // 使用传入的 client 参数而不是创建新的客户端
+    let response = match client
         .get(&img_url)
-        //.ssl_certs(empty_certificates)
         .timeout(std::time::Duration::from_secs(3))
         .send()
         .await
     {
-        //let response = match reqwest::Client::new().get(&img_url).timeout(std::time::Duration::from_secs(3)).send().await {
         Ok(response) => response,
         Err(err) => {
             println!("请求图片失败: {}", err);
