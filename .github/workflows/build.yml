@@ -3,9 +3,9 @@ name: Build and Release
 on:
   push:
     branches:
-      - master
+      - feature/person-detection
     tags:
-      - 'v*'
+      - 'test*'
 env:
   TARGET: x86_64-unknown-linux-musl
   ARTIFACT_NAME: videoMsg

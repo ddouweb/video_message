@@ -1,5 +1,7 @@
 use crate::{
     db,
+    image_dedup::{compute_phash_from_url, ImageDedup},
+    person_detector::{detect_person_from_url, extract_feature_from_url, PersonDetector},
     models::{
         chan_msg::ChanMsg,
         models::{AppState, Body, Message},
@@ -84,6 +86,51 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
     let img_server = std::env::var("APP_IMG_SERVER").expect("未设置APP_IMG_SERVER");
     println!("图片服务器地址: {img_server}");
 
+    // 初始化图片去重
+    let p_hash_threshold = env::var("APP_P_HASH_THRESHOLD")
+        .unwrap_or_else(|_| "5".to_owned())
+        .parse::<u8>()
+        .unwrap_or(5);
+
+    let ai_similarity_threshold = env::var("APP_AI_SIMILARITY_THRESHOLD")
+        .unwrap_or_else(|_| "0.95".to_owned())
+        .parse::<f32>()
+        .unwrap_or(0.95);
+
+    let mut image_dedup = ImageDedup::new(p_hash_threshold, ai_similarity_threshold, 1000);
+    let http_client = reqwest::Client::new();
+    println!("图片去重功能已启用，pHash阈值: {}, AI相似度阈值: {}", p_hash_threshold, ai_similarity_threshold);
+
+    // 初始化人员检测
+    let person_alert_enabled = env::var("APP_PERSON_ALERT_ENABLED")
+        .unwrap_or_else(|_| "true".to_owned())
+        .parse::<bool>()
+        .unwrap_or(true);
+
+    let person_confidence = env::var("APP_PERSON_CONFIDENCE_THRESHOLD")
+        .unwrap_or_else(|_| "0.7".to_owned())
+        .parse::<f32>()
+        .unwrap_or(0.7);
+
+    let model_path = env::var("APP_MODEL_PATH")
+        .unwrap_or_else(|_| "models/mobilenetv2.onnx".to_owned());
+
+    let mut person_detector: Option<PersonDetector> = if person_alert_enabled {
+        let model_path = std::path::Path::new(&model_path);
+        match PersonDetector::new(model_path, person_confidence) {
+            Ok(detector) => {
+                println!("人员检测功能已启用，置信度阈值: {}", person_confidence);
+                Some(detector)
+            }
+            Err(e) => {
+                eprintln!("人员检测初始化失败: {}", e);
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let now = chrono::Local::now().time();
     if now >= start_time && now <= end_time {
         println!(
@@ -115,6 +162,36 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                             match body {
                                 Body::WarnBody(data) => {
                                     for picture in data.get_picture_list() {
+                                        // 计算 pHash
+                                        let p_hash = match compute_phash_from_url(&http_client, picture.get_url()).await {
+                                            Ok(h) => Some(h),
+                                            Err(e) => {
+                                                eprintln!("计算pHash失败: {}", e);
+                                                None
+                                            }
+                                        };
+
+                                        // 提取 AI 特征（用于去重）
+                                        let ai_feature = if let Some(ref mut detector) = person_detector {
+                                            extract_feature_from_url(&http_client, picture.get_url(), detector).await.ok()
+                                        } else {
+                                            None
+                                        };
+
+                                        // 检查是否重复（pHash + AI 组合）
+                                        let is_dup = if let (Some(ref ph), Some(ref feat)) = (&p_hash, &ai_feature) {
+                                            image_dedup.is_duplicate(ph, feat)
+                                        } else if let Some(ref ph) = p_hash {
+                                            image_dedup.is_duplicate_phash(ph)
+                                        } else {
+                                            false
+                                        };
+
+                                        if is_dup {
+                                            println!("过滤重复图片: {}", picture.get_url());
+                                            continue; // 跳过，不计入 pic_count
+                                        }
+
                                         let id = crate::db::insert_image_url(
                                             app.get_db_pool(),
                                             msg_id,
@@ -126,7 +203,35 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                         .await;
                                         app.save_image(id, picture.get_url_string(),&date_dir).await;
                                         //app.save_image(id,picture.get_url_string()).await;
-                                        urls.push(format!("{img_server}/{id}.jpg"));
+                                        let img_url = format!("{img_server}/{id}.jpg");
+                                        urls.push(img_url.clone());
+
+                                        // 添加到去重缓存
+                                        if let Some(ref ph) = p_hash {
+                                            image_dedup.add(
+                                                picture.get_url_string(),
+                                                ph.clone(),
+                                                ai_feature.unwrap_or_default(),
+                                            );
+                                        }
+
+                                        // 人员检测
+                                        if let Some(ref mut detector) = person_detector {
+                                            match detect_person_from_url(&http_client, picture.get_url(), detector).await {
+                                                Ok(person_detected) => {
+                                                    if person_detected && !detector.has_sent_alert() {
+                                                        // 发送人员出现提醒
+                                                        let message = format!("<img src='{}' />", img_url);
+                                                        app.send("⚠️ 人员出现".to_string(), message).await;
+                                                        println!("发送人员出现提醒: {}", picture.get_url());
+                                                    }
+                                                }
+                                                Err(e) => {
+                                                    eprintln!("人员检测失败: {}", e);
+                                                }
+                                            }
+                                        }
+
                                         pic_count += 1;
                                     }
                                 }
@@ -173,6 +278,10 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                             .await;
                         pic_count = 0;
                         urls.clear();
+                        image_dedup.clear(); // 清空去重缓存
+                        if let Some(ref mut detector) = person_detector {
+                            detector.reset(); // 重置人员检测状态
+                        }
                     }
                 }
             }
@@ -204,6 +313,10 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                     pic_count = 0;
                     //timeout_count = 0;
                     urls.clear();
+                    image_dedup.clear(); // 清空去重缓存
+                    if let Some(ref mut detector) = person_detector {
+                        detector.reset(); // 重置人员检测状态
+                    }
                 } else {
                     //timeout_count += 1;
                 }
