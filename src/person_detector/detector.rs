@@ -2,10 +2,10 @@ use std::path::Path;
 use image::GenericImageView;
 use std::sync::Mutex;
 use tract_onnx::prelude::*;
+use tract_ndarray::ArrayViewD;
 
 pub struct PersonDetector {
     model: Option<TypedModel>,
-    session: Option<TypedRun>,
     input_name: String,
     output_name: String,
     confidence_threshold: f32,
@@ -20,7 +20,7 @@ impl PersonDetector {
         }
 
         // 加载 ONNX 模型
-        let model = tract_onnx::onnx::model().load_file(model_path)?;
+        let model = tract_onnx::onnx::onnx().load_file(model_path)?;
         let model = model.into_optimized()?;
         let model = model.into_runnable()?;
 
@@ -30,7 +30,6 @@ impl PersonDetector {
 
         Ok(Self {
             model: Some(model),
-            session: None,
             input_name,
             output_name,
             confidence_threshold,
@@ -88,12 +87,12 @@ impl PersonDetector {
         }
 
         // 创建 4D tensor [1, 3, 224, 224]
-        let tensor = Tensor::from_shape(&[1, 3, 224, 224], input)?;
+        let tensor = Tensor::from_shape(&[1, 3, 224, 224], &input)?;
         Ok(tensor)
     }
 
     /// 解析模型输出
-    fn parse_output(&self, output: &ArrayViewD<f32>) -> Result<bool, Box<dyn std::error::Error>> {
+    fn parse_output(&self, output: &ArrayViewD<f32>) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
         let mut max_confidence = 0.0f32;
         let mut max_class = 0usize;
 
