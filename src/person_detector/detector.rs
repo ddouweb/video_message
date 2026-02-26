@@ -1,9 +1,11 @@
 use std::path::Path;
 use image::GenericImageView;
 use std::sync::Mutex;
+use tract_onnx::prelude::*;
 
 pub struct PersonDetector {
-    session: Option<ort::Session>,
+    model: Option<TypedModel>,
+    session: Option<TypedRun>,
     input_name: String,
     output_name: String,
     confidence_threshold: f32,
@@ -17,14 +19,18 @@ impl PersonDetector {
             return Err("模型文件不存在: models/mobilenetv2.onnx".into());
         }
 
-        let session = ort::Session::from_file(model_path)?;
+        // 加载 ONNX 模型
+        let model = tract_onnx::onnx::model().load_file(model_path)?;
+        let model = model.into_optimized()?;
+        let model = model.into_runnable()?;
 
-        // 获取输入输出名称
-        let input_name = session.inputs()[0].name.clone();
-        let output_name = session.outputs()[0].name.clone();
+        // 获取输入输出信息
+        let input_name = model.input_names()[0].0.clone();
+        let output_name = model.output_names()[0].0.clone();
 
         Ok(Self {
-            session: Some(session),
+            model: Some(model),
+            session: None,
             input_name,
             output_name,
             confidence_threshold,
@@ -34,9 +40,8 @@ impl PersonDetector {
 
     /// 检测图片中是否有人
     pub fn detect(&mut self, image_data: &[u8]) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-        // 如果没有模型，返回 false
-        let session = match &self.session {
-            Some(s) => s,
+        let model = match &self.model {
+            Some(m) => m,
             None => return Ok(false),
         };
 
@@ -44,13 +49,11 @@ impl PersonDetector {
         let input_tensor = self.preprocess_image(image_data)?;
 
         // 运行推理
-        let outputs = session.run(ort::inputs! {
-            self.input_name.clone() => input_tensor
-        })?;
+        let result = model.run(tvec!(input_tensor))?;
 
         // 解析输出
-        let output = outputs.get(&self.output_name)?;
-        let result = self.parse_output(output)?;
+        let output = result[0].to_array_view()?;
+        let result = self.parse_output(&output)?;
 
         // 如果检测到人且未发送过提醒
         if result {
@@ -64,7 +67,7 @@ impl PersonDetector {
     }
 
     /// 预处理图片为模型输入
-    fn preprocess_image(&self, image_data: &[u8]) -> Result<ort::Tensor<f32>, Box<dyn std::error::Error + Send + Sync>> {
+    fn preprocess_image(&self, image_data: &[u8]) -> Result<Tensor, Box<dyn std::error::Error + Send + Sync>> {
         // 解码图片
         let img = image::load_from_memory(image_data)?;
 
@@ -85,20 +88,19 @@ impl PersonDetector {
         }
 
         // 创建 4D tensor [1, 3, 224, 224]
-        let tensor = ort::Tensor::from_array(input.into_shape([1, 3, 224, 224])?)?;
+        let tensor = Tensor::from_shape(&[1, 3, 224, 224], input)?;
         Ok(tensor)
     }
 
     /// 解析模型输出
-    fn parse_output(&self, output: &ort::Tensor<f32>) -> Result<bool, Box<dyn std::error::Error>> {
-        let data = output.view();
+    fn parse_output(&self, output: &ArrayViewD<f32>) -> Result<bool, Box<dyn std::error::Error>> {
         let mut max_confidence = 0.0f32;
         let mut max_class = 0usize;
 
         // 找到最高置信度的类别
-        for (i, &confidence) in data.iter().enumerate() {
-            if confidence > max_confidence {
-                max_confidence = confidence;
+        for (i, confidence) in output.iter().enumerate() {
+            if *confidence > max_confidence {
+                max_confidence = *confidence;
                 max_class = i;
             }
         }
@@ -126,8 +128,8 @@ impl PersonDetector {
 
     /// 提取图片的特征向量（用于去重）
     pub fn extract_feature(&mut self, image_data: &[u8]) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
-        let session = match &self.session {
-            Some(s) => s,
+        let model = match &self.model {
+            Some(m) => m,
             None => return Ok(vec![]),
         };
 
@@ -135,21 +137,15 @@ impl PersonDetector {
         let input_tensor = self.preprocess_image(image_data)?;
 
         // 运行推理，获取特征向量
-        let outputs = session.run(ort::inputs! {
-            self.input_name.clone() => input_tensor
-        })?;
+        let result = model.run(tvec!(input_tensor))?;
 
         // 获取输出
-        let output = outputs.get(&self.output_name)?;
-        let data = output.view();
+        let output = result[0].to_array_view()?;
 
         // MobileNet V2 输出是 [1, 1280]，提取特征向量
         let mut feature = Vec::with_capacity(1280);
-        // 输出形状是 [1, 1280, 1, 1] 或类似形状，需要展平
-        let shape = output.dimensions();
-        let feature_size = shape[1] as usize;
-        for i in 0..feature_size {
-            feature.push(data[i]);
+        for i in 0..1280 {
+            feature.push(output[[0, i]]);
         }
 
         Ok(feature)
