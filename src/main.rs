@@ -9,6 +9,8 @@ mod models;
 mod db;
 mod handlers;
 mod routers;
+mod image_dedup;
+mod person_detector;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
