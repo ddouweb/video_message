@@ -1,5 +1,4 @@
 use img_hash::{HasherConfig, HashAlg};
-use image::GenericImageView;
 
 /// 计算图片的 pHash 值（从内存数据）
 pub fn compute_phash_from_memory(image_data: &[u8]) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -9,7 +8,7 @@ pub fn compute_phash_from_memory(image_data: &[u8]) -> Result<String, Box<dyn st
         .to_hasher();
 
     // 从内存加载图片
-    let img = image::load_from_memory(image_data)?;
+    let img = img_hash::image::load_from_memory(image_data)?;
     let hash = hasher.hash_image(&img);
     Ok(hash.to_base64())
 }
