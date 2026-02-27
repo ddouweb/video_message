@@ -209,7 +209,6 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                         // 添加到去重缓存
                                         if let Some(ref ph) = p_hash {
                                             image_dedup.add(
-                                                picture.get_url_string(),
                                                 ph.clone(),
                                                 ai_feature.unwrap_or_default(),
                                             );

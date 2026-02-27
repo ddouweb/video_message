@@ -1,7 +1,6 @@
 use std::collections::VecDeque;
 
 pub struct DedupItem {
-    pub url: String,
     pub p_hash: String,
     pub ai_feature: Vec<f32>,
 }
@@ -55,11 +54,11 @@ impl ImageDedup {
     }
 
     /// 添加图片到缓存
-    pub fn add(&mut self, url: String, p_hash: String, ai_feature: Vec<f32>) {
+    pub fn add(&mut self, p_hash: String, ai_feature: Vec<f32>) {
         if self.items.len() >= self.max_size {
             self.items.pop_front();
         }
-        self.items.push_back(DedupItem { url, p_hash, ai_feature });
+        self.items.push_back(DedupItem { p_hash, ai_feature });
     }
 
     /// 清空缓存
