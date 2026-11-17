@@ -87,6 +87,14 @@ docker compose down
 
 复用的原有配置：`APP_START_TIME`/`APP_END_TIME`（白天/夜间分界，默认 7:00:00~23:00:00，夜间降频但不停止）、`APP_MESSAGE_SIZE`（单条图集最多图片数）、`APP_IMG_SERVER`/`APP_IMG_PATH_LAST`/`APP_IMG_PATH_HIS`（图片存储）。
 
+模型文件不进 git，首次部署需下载（ultralytics 官方导出，12.85MB）：
+
+```bash
+curl -L -o models/yolov8n.onnx https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.onnx
+```
+
+> 注意：请勿使用 hf-mirror 等第三方转存的 yolov8n.onnx，实测存在导出损坏（输出全为噪音）。
+
 ### 3.2 行为说明
 
 - 只抓 `status == 1`（在线）的设备；抓拍按**设备各自到点调度**，不全局同步；

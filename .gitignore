@@ -8,3 +8,4 @@ tmpclaude-*-cwd
 /test_assets
 /dist
 /.playwright-mcp
+/models
