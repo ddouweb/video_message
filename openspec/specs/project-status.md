@@ -37,11 +37,21 @@
 - 到访结束：若缓冲中有提醒之外的新图则发一条"N张图片抓拍"图集（上限 `APP_MESSAGE_SIZE`），否则静默清空
 - webhook 通道仍沿用原批量规则（min/max/timeout）
 
+### 3.1 躺卧姿态即时提醒（独立通道）
+- 检出躺卧姿态的图**立即**推送"⚠️ 请关注: 设备名 有人躺卧"+ 该图，**不受到访批次节奏约束**（及时性优先）
+- 文案使用中性词"躺卧"，不出现危险字眼
+- 同设备冷却期 `APP_LYING_ALERT_COOLDOWN_SECS`（默认 1800s）内不重复；`APP_LYING_ALERT_ENABLED=off` 可整体关闭
+
 ### 4. 人员检测
-- YOLOv8n (COCO 80 类，class 0=person)，官方 ultralytics 导出（12.85MB，不进 git，下载地址见 README 3.1；第三方转存实测有损坏）
+- YOLOv8n-pose（官方 ultralytics 导出约 13MB，不进 git，下载地址见 README 3.1；第三方转存实测有损坏）。带 17 个人体关键点头，同时兼容旧纯检测版 yolov8n.onnx（自动识别通道数）
 - 预处理：letterbox 640×640 居中灰底 114，RGB /255，**NCHW 逐平面填充**（按像素交错填充会导致输入错乱、检测失效——历史踩坑）
-- 输出 [1,84,8400]（dims[1]<dims[2] 时类别维在前），无特征头，去重自动回退纯 pHash
-- 配置: `APP_PERSON_ALERT_ENABLED` (默认 true)、`APP_PERSON_CONFIDENCE_THRESHOLD` (默认 0.5)、`APP_MODEL_PATH` (默认 models/yolov8n.onnx)
+- 输出 [1,56,8400]（pose：4 框 + 1 person 分数 + 17×3 关键点；person 分数固定在第 4 行）；纯检测版为 [1,84,8400]（dims[1]<dims[2] 时类别维在前）。无特征头，去重自动回退纯 pHash
+- 配置: `APP_PERSON_ALERT_ENABLED` (默认 true)、`APP_PERSON_CONFIDENCE_THRESHOLD` (默认 0.5)、`APP_MODEL_PATH` (默认 models/yolov8n-pose.onnx)
+
+### 4.1 躺卧姿态判定（detector 内部）
+- 对每个超阈值的 person 候选框：取肩中点（关键点 5/6）与髋中点（关键点 11/12），躯干连线**横向分量 > 纵向分量 × 1.2** 判为躺卧（比值判定，与坐标尺度无关）
+- 关键点置信度 ≥ 0.3 才参与；肩/髋关键点不可用时回退**人形框宽 > 高 × 1.5** 兜底
+- 躺卧误报/漏报与光照、遮挡、拍摄角度相关，阈值（`TORSO_RATIO`/`KP_MIN_CONF`/`LYING_BOX_RATIO`，detector.rs 常量）可按实际场景调
 
 ### 5. 图片去重
 - **pHash 感知哈希**: DoubleGradient 8×8，快速相似图片检测
@@ -87,7 +97,9 @@ src/
 | APP_AI_SIMILARITY_THRESHOLD | AI 相似度阈值 | 0.95 |
 | APP_PERSON_ALERT_ENABLED | 本地人员检测开关 | true |
 | APP_PERSON_CONFIDENCE_THRESHOLD | 人员检测置信度阈值 | 0.5 |
-| APP_MODEL_PATH | ONNX 模型路径 | models/yolov8n.onnx |
+| APP_MODEL_PATH | ONNX 模型路径 | models/yolov8n-pose.onnx |
+| APP_LYING_ALERT_ENABLED | 躺卧姿态即时提醒开关 | on |
+| APP_LYING_ALERT_COOLDOWN_SECS | 同设备躺卧提醒冷却期(秒) | 1800 |
 | APP_ALERT_COOLDOWN_SECS | webhook 即时提醒冷却期(秒) | 600 |
 | APP_POLLER | 轮询抓拍模式开关 | off |
 | EZVIZ_APP_KEY / EZVIZ_APP_SECRET | 萤石开放平台凭证 (poller 必填) | (必填) |

@@ -248,6 +248,15 @@ pub async fn run_poller() {
     let visit_end_secs = read_secs_env("APP_VISIT_END_SECS", 600);
     // 到访期间长时间有人, 每隔该秒数补一条即时提醒
     let remind_secs = read_secs_env("APP_VISIT_REMIND_SECS", 1800);
+    // 躺卧姿态即时提醒: 检出即单独推送(绕过到访批次节奏), 冷却期内同设备不重复防抖动刷屏
+    let lying_alert_enabled = matches!(
+        std::env::var("APP_LYING_ALERT_ENABLED")
+            .unwrap_or_else(|_| "on".to_owned())
+            .to_lowercase()
+            .as_str(),
+        "on" | "true" | "1"
+    );
+    let lying_cooldown = Duration::from_secs(read_secs_env("APP_LYING_ALERT_COOLDOWN_SECS", 1800));
 
     let img_server = std::env::var("APP_IMG_SERVER").expect("未设置APP_IMG_SERVER");
     let his_path =
@@ -268,7 +277,7 @@ pub async fn run_poller() {
         .parse::<f32>()
         .unwrap_or(0.5);
     let model_path = std::env::var("APP_MODEL_PATH")
-        .unwrap_or_else(|_| "models/yolov8n.onnx".to_owned());
+        .unwrap_or_else(|_| "models/yolov8n-pose.onnx".to_owned());
     let mut person_detector: Option<PersonDetector> = if person_filter_enabled {
         match PersonDetector::new(std::path::Path::new(&model_path), person_confidence) {
             Ok(d) => {
@@ -291,6 +300,8 @@ pub async fn run_poller() {
     // 每设备最近一次保留"有人"图的时间(高频抓拍判定)和下次抓拍时间
     let mut person_last: HashMap<String, tokio::time::Instant> = HashMap::new();
     let mut next_due: HashMap<String, tokio::time::Instant> = HashMap::new();
+    // 每设备最近一次躺卧提醒时间
+    let mut lying_alert_last: HashMap<String, std::time::Instant> = HashMap::new();
 
     println!(
         "轮询抓拍模式已开启: 无人{interval}秒/有人{active_interval}秒/夜间{night_interval}秒, 到访结束{visit_end_secs}秒, token刷新周期{refresh_hours}小时, 相似度阈值{similarity_threshold}, 时间窗{start_time}~{end_time}"
@@ -456,15 +467,19 @@ pub async fn run_poller() {
 
             // 本地人员检测: 无人则丢弃, 有人才保留(检测失败时放行, 宁可多推不漏报)
             let mut person_confirmed = false;
+            let mut lying_detected = false;
             if let Some(ref mut detector) = person_detector {
                 match detector.detect(&bytes) {
-                    Ok(false) => {
-                        println!("设备{}图片未检测到人员, 丢弃", serial);
-                        let iv = next_capture_interval(&person_last, &serial, night, visit_end_secs, interval, active_interval, night_interval);
-                        next_due.insert(serial.clone(), tokio::time::Instant::now() + Duration::from_secs(iv));
-                        continue;
+                    Ok(r) => {
+                        if !r.person {
+                            println!("设备{}图片未检测到人员, 丢弃", serial);
+                            let iv = next_capture_interval(&person_last, &serial, night, visit_end_secs, interval, active_interval, night_interval);
+                            next_due.insert(serial.clone(), tokio::time::Instant::now() + Duration::from_secs(iv));
+                            continue;
+                        }
+                        person_confirmed = true;
+                        lying_detected = r.lying;
                     }
-                    Ok(true) => person_confirmed = true,
                     Err(e) => {
                         eprintln!("设备{}人员检测失败({}), 保留图片", serial, e);
                     }
@@ -505,6 +520,20 @@ pub async fn run_poller() {
                 app.send(format!("⚠️ 有人出现: {name}"), message).await;
                 last_person_alert = Some(std::time::Instant::now());
                 alerted_count += 1;
+            }
+
+            // 躺卧姿态即时提醒: 独立通道绕过到访批次节奏, 冷却期内同设备不重复
+            // (文案用中性词"躺卧", 避免危险字眼)
+            if lying_detected && lying_alert_enabled {
+                let due = lying_alert_last
+                    .get(&serial)
+                    .map_or(true, |t| t.elapsed() >= lying_cooldown);
+                if due {
+                    let message = format!("<img src='{img_url}' />");
+                    app.send(format!("⚠️ 请关注: {name} 有人躺卧"), message).await;
+                    println!("设备{}躺卧姿态提醒已发送", serial);
+                    lying_alert_last.insert(serial.clone(), std::time::Instant::now());
+                }
             }
 
             pic_count += 1;

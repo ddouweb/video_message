@@ -41,9 +41,12 @@ services:
       APP_TOKEN_REFRESH_HOURS: 120                  #accessToken刷新周期(小时),默认120即5天
       APP_SIMILARITY_THRESHOLD: "0.95"              #与上一张图相似度阈值,高于则丢弃(低于的都保留)
       APP_PERSON_ALERT_ENABLED: "true"              #本地人员检测开关,开启后轮询抓拍只保留有人的图
-      APP_MODEL_PATH: models/yolov8n.onnx           #人员检测模型(COCO 80类,class 0=person)
+      APP_MODEL_PATH: models/yolov8n-pose.onnx      #人员检测模型(pose版,带17关键点可判躺卧)
       APP_PERSON_CONFIDENCE_THRESHOLD: "0.5"        #人员检测置信度阈值
+      APP_LYING_ALERT_ENABLED: "on"                 #躺卧姿态即时提醒开关(on/off)
+      APP_LYING_ALERT_COOLDOWN_SECS: 1800           #同设备躺卧提醒冷却期(秒)
     volumes:
       - /data/video_root/apps/app:/app:ro #应用可执行文件
+      - /data/video_root/models:/models:ro #模型文件
       - /data/video_root/his_path:/data/his_path:rw  #存放历史截图
       - /data/video_root/last_path:/data/last_path:rw #存放最新的截图

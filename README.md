@@ -81,19 +81,21 @@ docker compose down
 | `APP_VISIT_REMIND_SECS` | 到访期间长时间有人，每隔该秒数补一条即时提醒（秒） | 1800 |
 | `APP_TOKEN_REFRESH_HOURS` | accessToken 刷新周期（小时），token 有效期 7 天 | 120 |
 | `APP_SIMILARITY_THRESHOLD` | 与上一张图的相似度阈值（0.0~1.0），高于则丢弃（低于的都保留） | 0.95 |
-| `APP_PERSON_ALERT_ENABLED` | 本地人员检测开关（YOLOv8n），开启后轮询抓拍只保留有人的图 | true |
-| `APP_MODEL_PATH` | 人员检测 ONNX 模型路径 | models/yolov8n.onnx |
+| `APP_PERSON_ALERT_ENABLED` | 本地人员检测开关（YOLOv8n-pose），开启后轮询抓拍只保留有人的图 | true |
+| `APP_MODEL_PATH` | 人员检测 ONNX 模型路径 | models/yolov8n-pose.onnx |
 | `APP_PERSON_CONFIDENCE_THRESHOLD` | 人员检测置信度阈值 | 0.5 |
+| `APP_LYING_ALERT_ENABLED` | 躺卧姿态即时提醒开关（需 pose 模型） | on |
+| `APP_LYING_ALERT_COOLDOWN_SECS` | 同设备躺卧提醒冷却期（秒），期内不重复提醒 | 1800 |
 
 复用的原有配置：`APP_START_TIME`/`APP_END_TIME`（白天/夜间分界，默认 7:00:00~23:00:00，夜间降频但不停止）、`APP_MESSAGE_SIZE`（单条图集最多图片数）、`APP_IMG_SERVER`/`APP_IMG_PATH_LAST`/`APP_IMG_PATH_HIS`（图片存储）。
 
-模型文件不进 git，首次部署需下载（ultralytics 官方导出，12.85MB）：
+模型文件不进 git，首次部署需下载（ultralytics 官方导出，约 13MB；自带 17 个人体关键点头，可判断躺卧姿态）：
 
 ```bash
-curl -L -o models/yolov8n.onnx https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.onnx
+curl -L -o models/yolov8n-pose.onnx https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n-pose.onnx
 ```
 
-> 注意：请勿使用 hf-mirror 等第三方转存的 yolov8n.onnx，实测存在导出损坏（输出全为噪音）。
+> 注意：请勿使用 hf-mirror 等第三方转存的模型，实测存在导出损坏（输出全为噪音）。旧的纯检测版 `yolov8n.onnx` 也兼容（只检人、无姿态判断）。
 
 ### 3.2 行为说明
 
@@ -111,6 +113,12 @@ curl -L -o models/yolov8n.onnx https://github.com/ultralytics/assets/releases/do
 2. **到访图集**：到访结束时把这一批图汇总成一条"N张图片抓拍"（`N < APP_MESSAGE_SIZE`）；若这批图都已随即时提醒发过、没有新图，则跳过，避免同图发两遍。
 
 即短到访 = 提醒 1 条 + 图集 1 条；检测关闭时无即时提醒，全部图走图集。
+
+### 3.4 躺卧姿态即时提醒
+
+使用 pose 模型（56 通道输出，17 关键点）时，检测到**躯干接近水平**的人（肩/髋中点连线横向分量明显大于纵向；关键点不可用时回退人形框宽高比判定）会**立即**推送一条"⚠️ 请关注: 设备名 有人躺卧"，不受到访批次节奏约束。同设备冷却期 `APP_LYING_ALERT_COOLDOWN_SECS`（默认 1800 秒）内不重复提醒。文案使用中性表述，不出现危险字眼。
+
+适用场景：独居老人长时间躺在地上/沙发上无人扶助等异常姿态的及时告知。误报率与光照、遮挡、拍摄角度相关，若提醒过多可调大冷却期或 `APP_LYING_ALERT_ENABLED=off` 关闭。
 
 注意：萤石云消息回调（WarnBody 通道）若仍开启，附图默认是 `hikencod` 加密格式（需在萤石 App 关闭图片加密才能明文展示），加密图不会入库推送；该通道的即时提醒冷却期由 `APP_ALERT_COOLDOWN_SECS` 控制（默认 600）。
 

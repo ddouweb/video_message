@@ -122,7 +122,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
         .unwrap_or(0.5);
 
     let model_path = env::var("APP_MODEL_PATH")
-        .unwrap_or_else(|_| "models/yolov8n.onnx".to_owned());
+        .unwrap_or_else(|_| "models/yolov8n-pose.onnx".to_owned());
 
     let mut person_detector: Option<PersonDetector> = if person_alert_enabled {
         let model_path = std::path::Path::new(&model_path);
