@@ -1,4 +1,8 @@
-*
-!src/
-!Cargo.toml
-!.env
+target
+.git
+.env
+.claude
+.playwright-mcp
+docs
+dist
+test_assets

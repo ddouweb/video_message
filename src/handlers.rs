@@ -1,7 +1,7 @@
 use crate::{
     db,
-    image_dedup::{compute_phash_from_url, ImageDedup},
-    person_detector::{detect_person_from_url, extract_feature_from_url, PersonDetector},
+    image_dedup::{compute_phash_from_memory, ImageDedup},
+    person_detector::PersonDetector,
     models::{
         chan_msg::ChanMsg,
         models::{AppState, Body, Message},
@@ -77,6 +77,15 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                 .expect("设置APP_MESSAGE_SIZE错误!");
     println!("最大接收图片数量: {max_pic_count}");
 
+    // 有人出现即时提醒的冷却期: 期内不重复即时推送, 告警图静默累计走批量摘要
+    let alert_cooldown = std::time::Duration::from_secs(
+        env::var("APP_ALERT_COOLDOWN_SECS")
+            .unwrap_or_else(|_| "600".to_owned())
+            .parse::<u64>()
+            .unwrap_or(600),
+    );
+    println!("有人出现即时提醒冷却期: {}秒", alert_cooldown.as_secs());
+
     /*let max_timeout_count = env::var("APP_MAX_TIMEOUT_COUNT")
         .unwrap_or_else(|_| "3".to_owned())
         .parse::<u8>()
@@ -108,12 +117,12 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
         .unwrap_or(true);
 
     let person_confidence = env::var("APP_PERSON_CONFIDENCE_THRESHOLD")
-        .unwrap_or_else(|_| "0.7".to_owned())
+        .unwrap_or_else(|_| "0.5".to_owned())
         .parse::<f32>()
-        .unwrap_or(0.7);
+        .unwrap_or(0.5);
 
     let model_path = env::var("APP_MODEL_PATH")
-        .unwrap_or_else(|_| "models/mobilenetv2.onnx".to_owned());
+        .unwrap_or_else(|_| "models/yolov8n.onnx".to_owned());
 
     let mut person_detector: Option<PersonDetector> = if person_alert_enabled {
         let model_path = std::path::Path::new(&model_path);
@@ -149,6 +158,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
     //设置允许过程参数
     let mut urls: Vec<String> = Vec::new();
     let mut pic_count = 0;
+    let mut last_person_alert: Option<std::time::Instant> = None;
     //let mut timeout_count = 0;
     let mut date_dir = chrono::Local::now().format("%Y-%m-%d").to_string();
     loop {
@@ -161,19 +171,43 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                         Some(ref body) => {
                             match body {
                                 Body::WarnBody(data) => {
+                                    // 本事件是否一张图都没能展示(全部加密/下载失败)
+                                    let mut encrypted_only = true;
                                     for picture in data.get_picture_list() {
-                                        // 计算 pHash
-                                        let p_hash = match compute_phash_from_url(&http_client, picture.get_url()).await {
-                                            Ok(h) => Some(h),
+                                        // 只下载一次, 哈希/落盘复用同一份数据
+                                        let bytes = match http_client.get(picture.get_url()).send().await {
+                                            Ok(resp) => match resp.bytes().await {
+                                                Ok(b) => b,
+                                                Err(e) => {
+                                                    eprintln!("下载告警图片失败: {e}");
+                                                    continue;
+                                                }
+                                            },
                                             Err(e) => {
-                                                eprintln!("计算pHash失败: {}", e);
-                                                None
+                                                eprintln!("下载告警图片失败: {e}");
+                                                continue;
                                             }
                                         };
 
-                                        // 提取 AI 特征（用于去重）
+                                        // 计算 pHash; 解码失败(hikencod加密图/损坏图)不入库不推送,
+                                        // 事件降级为纯文字即时提醒
+                                        let p_hash = match compute_phash_from_memory(&bytes) {
+                                            Ok(h) => {
+                                                encrypted_only = false;
+                                                Some(h)
+                                            }
+                                            Err(_) => {
+                                                eprintln!(
+                                                    "告警图片无法解码(疑似hikencod加密), 跳过: {}",
+                                                    picture.get_url()
+                                                );
+                                                continue;
+                                            }
+                                        };
+
+                                        // 提取 AI 特征（用于去重, 当前模型无特征头返回空）
                                         let ai_feature = if let Some(ref mut detector) = person_detector {
-                                            extract_feature_from_url(&http_client, picture.get_url(), detector).await.ok()
+                                            detector.extract_feature(&bytes).ok()
                                         } else {
                                             None
                                         };
@@ -201,10 +235,23 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                             &date_dir,
                                         )
                                         .await;
-                                        app.save_image(id, picture.get_url_string(),&date_dir).await;
-                                        //app.save_image(id,picture.get_url_string()).await;
+                                        app.save_image_bytes(id, &bytes, &date_dir).await;
                                         let img_url = format!("{img_server}/{id}.jpg");
                                         urls.push(img_url.clone());
+
+                                        // 人体告警即时提醒: 冷却期外首张告警图立即推送,
+                                        // 期内不重复打扰, 后续告警图继续累计走批量摘要
+                                        if last_person_alert
+                                            .map_or(true, |t| t.elapsed() >= alert_cooldown)
+                                        {
+                                            let message = format!("<img src='{}' />", img_url);
+                                            app.send(
+                                                format!("⚠️ 有人出现: {}", data.get_channel_name()),
+                                                message,
+                                            )
+                                            .await;
+                                            last_person_alert = Some(std::time::Instant::now());
+                                        }
 
                                         // 添加到去重缓存
                                         if let Some(ref ph) = p_hash {
@@ -215,24 +262,20 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                             );
                                         }
 
-                                        // 人员检测
-                                        if let Some(ref mut detector) = person_detector {
-                                            match detect_person_from_url(&http_client, picture.get_url(), detector).await {
-                                                Ok(person_detected) => {
-                                                    if person_detected && !detector.has_sent_alert() {
-                                                        // 发送人员出现提醒
-                                                        let message = format!("<img src='{}' />", img_url);
-                                                        app.send("⚠️ 人员出现".to_string(), message).await;
-                                                        println!("发送人员出现提醒: {}", picture.get_url());
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    eprintln!("人员检测失败: {}", e);
-                                                }
-                                            }
-                                        }
-
                                         pic_count += 1;
+                                    }
+
+                                    // 整个事件一张可用图都没有时, 仍发纯文字即时提醒(冷却期规则同上)
+                                    if encrypted_only
+                                        && last_person_alert
+                                            .map_or(true, |t| t.elapsed() >= alert_cooldown)
+                                    {
+                                        app.send(
+                                            format!("⚠️ 有人出现: {}", data.get_channel_name()),
+                                            "告警图片已加密无法展示, 稍后由轮询抓拍补图".to_owned(),
+                                        )
+                                        .await;
+                                        last_person_alert = Some(std::time::Instant::now());
                                     }
                                 }
                                 Body::OnOffLine(data) => {

@@ -127,6 +127,11 @@ impl ChanMsg {
         crate::util::save_image(&self.http_client,id, img_url, &self.last_path, &self.his_path,data_dir).await;
     }
 
+    //将内存中的图片数据落盘（告警图只下载一次复用）
+    pub(crate) async fn save_image_bytes(&self, id: u64, bytes: &[u8], data_dir: &str) {
+        crate::util::save_image_bytes(id, bytes, &self.last_path, &self.his_path, data_dir).await;
+    }
+
     /**
      * 清理昨日的图片
      */

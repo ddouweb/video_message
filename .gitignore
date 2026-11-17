@@ -2,5 +2,9 @@
 Cargo.lock
 .vscode
 .idea
+.env
 tmpclaude-*-cwd
 .claude/*
+/test_assets
+/dist
+/.playwright-mcp

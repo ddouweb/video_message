@@ -28,7 +28,21 @@ services:
       APP_API_TOPIC: video                            #PUSH_PLUS群组编码
       APP_IMG_SERVER: https://img.xxxxxxxxxxxxxxx.cn/img #收到消息后，消息内图片的url地址前缀
       APP_API_TIMEOUT: 600
-      APP_MESSAGE_SIZE: 50
+      APP_MIN_PIC_COUNT: 5                           #单条推送最少图片数
+      APP_MESSAGE_SIZE: 25                           #单条推送最多图片数
+      APP_POLLER: on                                #萤石轮询抓拍模式开关(on/off)
+      EZVIZ_APP_KEY: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx #萤石开放平台appKey
+      EZVIZ_APP_SECRET: xxxxxxxxxxxxxxxxxxxxxxxxxxx #萤石开放平台appSecret
+      APP_CAPTURE_INTERVAL_SECS: 120                #白天无人时抓拍间隔(秒)
+      APP_ACTIVE_CAPTURE_INTERVAL_SECS: 60          #有人期间(最近保留过有人图)抓拍间隔(秒)
+      APP_NIGHT_CAPTURE_INTERVAL_SECS: 900          #夜间无人时抓拍间隔(秒)
+      APP_VISIT_END_SECS: 600                       #无新保留图超过该秒数判定"到访结束",触发图集收尾
+      APP_VISIT_REMIND_SECS: 1800                   #到访期间长时间有人,每隔该秒数补一条即时提醒
+      APP_TOKEN_REFRESH_HOURS: 120                  #accessToken刷新周期(小时),默认120即5天
+      APP_SIMILARITY_THRESHOLD: "0.95"              #与上一张图相似度阈值,高于则丢弃(低于的都保留)
+      APP_PERSON_ALERT_ENABLED: "true"              #本地人员检测开关,开启后轮询抓拍只保留有人的图
+      APP_MODEL_PATH: models/yolov8n.onnx           #人员检测模型(COCO 80类,class 0=person)
+      APP_PERSON_CONFIDENCE_THRESHOLD: "0.5"        #人员检测置信度阈值
     volumes:
       - /data/video_root/apps/app:/app:ro #应用可执行文件
       - /data/video_root/his_path:/data/his_path:rw  #存放历史截图

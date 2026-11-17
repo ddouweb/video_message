@@ -59,6 +59,53 @@ docker compose up
 docker compose down
 ```
 
+---
+
+## 3. 萤石轮询抓拍模式
+
+当萤石云推送不可用时（如个人版套餐到期后不再下发消息），可启用轮询抓拍模式：服务自己定时获取 accessToken，对在线设备手动抓拍，图片与该设备上一张对比，相似度过高则丢弃，剩余图片按原有规则推送。
+
+### 3.1 配置
+
+在 `docker-compose.yaml` 的 `video_message` 服务环境变量中添加：
+
+| 环境变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `APP_POLLER` | 轮询抓拍模式开关，`on`/`off` | off |
+| `EZVIZ_APP_KEY` | 萤石开放平台 appKey（必填，开启时） | 无 |
+| `EZVIZ_APP_SECRET` | 萤石开放平台 appSecret（必填，开启时） | 无 |
+| `APP_CAPTURE_INTERVAL_SECS` | 白天无人时抓拍间隔（秒） | 120 |
+| `APP_ACTIVE_CAPTURE_INTERVAL_SECS` | 有人期间（最近保留过有人图）抓拍间隔（秒） | 60 |
+| `APP_NIGHT_CAPTURE_INTERVAL_SECS` | 夜间无人时抓拍间隔（秒） | 900 |
+| `APP_VISIT_END_SECS` | 无新保留图超过该秒数判定"到访结束"，触发图集收尾（秒） | 600 |
+| `APP_VISIT_REMIND_SECS` | 到访期间长时间有人，每隔该秒数补一条即时提醒（秒） | 1800 |
+| `APP_TOKEN_REFRESH_HOURS` | accessToken 刷新周期（小时），token 有效期 7 天 | 120 |
+| `APP_SIMILARITY_THRESHOLD` | 与上一张图的相似度阈值（0.0~1.0），高于则丢弃（低于的都保留） | 0.95 |
+| `APP_PERSON_ALERT_ENABLED` | 本地人员检测开关（YOLOv8n），开启后轮询抓拍只保留有人的图 | true |
+| `APP_MODEL_PATH` | 人员检测 ONNX 模型路径 | models/yolov8n.onnx |
+| `APP_PERSON_CONFIDENCE_THRESHOLD` | 人员检测置信度阈值 | 0.5 |
+
+复用的原有配置：`APP_START_TIME`/`APP_END_TIME`（白天/夜间分界，默认 7:00:00~23:00:00，夜间降频但不停止）、`APP_MESSAGE_SIZE`（单条图集最多图片数）、`APP_IMG_SERVER`/`APP_IMG_PATH_LAST`/`APP_IMG_PATH_HIS`（图片存储）。
+
+### 3.2 行为说明
+
+- 只抓 `status == 1`（在线）的设备；抓拍按**设备各自到点调度**，不全局同步；
+- 抓拍间隔自适应：某设备最近 `APP_VISIT_END_SECS` 秒内保留过有人图 → `APP_ACTIVE_CAPTURE_INTERVAL_SECS`；夜间（时间窗外）无人 → `APP_NIGHT_CAPTURE_INTERVAL_SECS`；其余 → `APP_CAPTURE_INTERVAL_SECS`。**夜间不停止抓拍**，检出有人同样即时提醒；
+- 相似度对比基准是**每个设备上一张被保留（推送）的图**；被丢弃的图不更新基准，场景的渐进变化会累积、最终超过阈值被推出去；
+- 本地人员检测开启时，抓拍图先过 pHash 去重、再过 YOLOv8n 人员过滤，**无人的图直接丢弃**；有人的图按"即时提醒 + 到访图集"推送（见 3.3）；
+- 手动抓拍接口为按次计费（免费额度 10000 次/天），抓拍间隔不宜过短（同一设备须 ≥4 秒）。
+
+### 3.3 有人出现推送策略（到访批次：即时提醒 + 到访图集）
+
+一次"到访"= 从第一张保留的有人图开始，到 `APP_VISIT_END_SECS` 秒内再无新的保留图结束（人走了/画面静止）。到访期间该设备保持高频抓拍。微信通知每个到访最多两条：
+
+1. **即时提醒**：到访开始时推送一条"⚠️ 有人出现: 设备名"+ 首图；到访持续超过 `APP_VISIT_REMIND_SECS` 秒时每隔该时长补一条（人还在）。检测失败放行的图不做即时提醒（不能断言有人），只进图集；
+2. **到访图集**：到访结束时把这一批图汇总成一条"N张图片抓拍"（`N < APP_MESSAGE_SIZE`）；若这批图都已随即时提醒发过、没有新图，则跳过，避免同图发两遍。
+
+即短到访 = 提醒 1 条 + 图集 1 条；检测关闭时无即时提醒，全部图走图集。
+
+注意：萤石云消息回调（WarnBody 通道）若仍开启，附图默认是 `hikencod` 加密格式（需在萤石 App 关闭图片加密才能明文展示），加密图不会入库推送；该通道的即时提醒冷却期由 `APP_ALERT_COOLDOWN_SECS` 控制（默认 600）。
+
 ----
 # 致谢
 [pushPlus](https://www.pushplus.plus/)

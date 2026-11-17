@@ -11,11 +11,26 @@ mod handlers;
 mod routers;
 mod image_dedup;
 mod person_detector;
+mod poller;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
     let (sender, receiver) = mpsc::channel(100);
     let state = Arc::new(Mutex::new(AppState { sender }));
+
+    // 启动萤石轮询抓拍线程(APP_POLLER控制开关), panic后10秒自动重启
+    tokio::spawn(async {
+        loop {
+            let handle = tokio::spawn(poller::run_poller());
+            match handle.await {
+                Ok(()) => break, // 正常返回(模式未开启)则不再重启
+                Err(_) => {
+                    eprintln!("轮询抓拍线程异常退出, 10秒后重启");
+                    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                }
+            }
+        }
+    });
 
     // 启动消息处理线程
     let state_clone = Arc::clone(&state);

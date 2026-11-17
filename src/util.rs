@@ -82,3 +82,40 @@ pub(crate) async fn save_image(
         println!("复制文件失败: {}", err);
     }
 }
+
+/// 将内存中的图片数据落盘（轮询抓拍模式用，图片只下载一次）
+pub(crate) async fn save_image_bytes(
+    id: u64,
+    bytes: &[u8],
+    last_path: &str,
+    his_path: &str,
+    data_dir: &str,
+) {
+    let filename = format!("{id}.jpg");
+    let file_path = Path::new(last_path).join(&filename);
+
+    let mut file = match File::create(&file_path).await {
+        Ok(file) => file,
+        Err(err) => {
+            println!("无法在{}创建文件: {}", last_path, err);
+            return;
+        }
+    };
+
+    if let Err(err) = file.write_all(bytes).await {
+        println!("写入文件失败: {}", err);
+        return;
+    }
+    if let Err(err) = file.flush().await {
+        println!("刷新文件缓冲区失败: {}", err);
+        return;
+    }
+
+    // 复制文件到 history_img 文件夹
+    let history_dir = format!("{}/{}", his_path, data_dir);
+    let _ = std::fs::create_dir_all(&history_dir);
+    let history_path: std::path::PathBuf = Path::new(&history_dir).join(&filename);
+    if let Err(err) = std::fs::copy(&file_path, &history_path) {
+        println!("复制文件失败: {}", err);
+    }
+}
