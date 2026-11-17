@@ -1,5 +1,4 @@
 use img_hash::{HasherConfig, HashAlg};
-use image::GenericImageView;
 
 /// 计算图片的 pHash 值（从内存数据）
 pub fn compute_phash_from_memory(image_data: &[u8]) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -9,17 +8,9 @@ pub fn compute_phash_from_memory(image_data: &[u8]) -> Result<String, Box<dyn st
         .to_hasher();
 
     // 从内存加载图片
-    let img = image::load_from_memory(image_data)?;
+    let img = img_hash::image::load_from_memory(image_data)?;
     let hash = hasher.hash_image(&img);
     Ok(hash.to_base64())
-}
-
-/// 从 URL 下载图片并计算 pHash
-pub async fn compute_phash_from_url(client: &reqwest::Client, url: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let response = client.get(url).send().await?;
-    let bytes = response.bytes().await?;
-
-    compute_phash_from_memory(&bytes)
 }
 
 /// 计算两个 pHash 字符串的相似度（0.0~1.0，1.0 表示完全相同）

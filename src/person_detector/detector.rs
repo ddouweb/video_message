@@ -1,6 +1,5 @@
 use std::path::Path;
 use image::GenericImageView;
-use std::sync::Mutex;
 use tract_onnx::prelude::*;
 use tract_onnx::prelude::tract_ndarray::ArrayViewD;
 
@@ -14,7 +13,6 @@ const BOX_VALUES: usize = 4;
 pub struct PersonDetector {
     model: Option<RunnableModel<TypedFact, Box<dyn TypedOp>, TypedModel>>,
     confidence_threshold: f32,
-    has_sent_alert: Mutex<bool>,
 }
 
 impl PersonDetector {
@@ -33,7 +31,6 @@ impl PersonDetector {
         Ok(Self {
             model: Some(model),
             confidence_threshold,
-            has_sent_alert: Mutex::new(false),
         })
     }
 
@@ -56,7 +53,6 @@ impl PersonDetector {
 
         if best >= self.confidence_threshold {
             println!("人员检测: 发现{}个人形目标, 最高置信度{:.2}", count, best);
-            *self.has_sent_alert.lock().unwrap() = true;
         }
 
         Ok(best >= self.confidence_threshold)
@@ -99,16 +95,6 @@ impl PersonDetector {
             .map_err(|e| format!("创建输入张量失败: {e}").into())
     }
 
-    /// 获取是否已发送过提醒
-    pub fn has_sent_alert(&self) -> bool {
-        *self.has_sent_alert.lock().unwrap()
-    }
-
-    /// 重置提醒状态
-    pub fn reset(&mut self) {
-        *self.has_sent_alert.lock().unwrap() = false;
-    }
-
     /// YOLOv8 没有分类特征向量输出, 返回空(去重自动回退到纯 pHash)
     pub fn extract_feature(&mut self, _image_data: &[u8]) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
         Ok(vec![])
@@ -149,29 +135,8 @@ fn parse_person_scores(output: &ArrayViewD<f32>, threshold: f32) -> (f32, usize)
     (best, count)
 }
 
-/// 从 URL 下载图片并检测是否有人
-pub async fn detect_person_from_url(
-    client: &reqwest::Client,
-    url: &str,
-    detector: &mut PersonDetector,
-) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-    let response = client.get(url).send().await?;
-    let bytes = response.bytes().await?;
-
-    detector.detect(&bytes)
-}
 
 /// 从 URL 下载图片并提取特征向量
-pub async fn extract_feature_from_url(
-    client: &reqwest::Client,
-    url: &str,
-    detector: &mut PersonDetector,
-) -> Result<Vec<f32>, Box<dyn std::error::Error + Send + Sync>> {
-    let response = client.get(url).send().await?;
-    let bytes = response.bytes().await?;
-
-    detector.extract_feature(&bytes)
-}
 
 #[cfg(test)]
 mod tests {

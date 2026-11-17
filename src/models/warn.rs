@@ -56,8 +56,4 @@ impl Picture {
     pub fn get_url(&self)->&String{
         &self.url
     }
-
-    pub fn get_url_string(&self)->String{
-        self.url.clone()
-    }
 }

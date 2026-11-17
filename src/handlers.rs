@@ -256,7 +256,6 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                         // 添加到去重缓存
                                         if let Some(ref ph) = p_hash {
                                             image_dedup.add(
-                                                picture.get_url_string(),
                                                 ph.clone(),
                                                 ai_feature.unwrap_or_default(),
                                             );
@@ -322,9 +321,6 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                         pic_count = 0;
                         urls.clear();
                         image_dedup.clear(); // 清空去重缓存
-                        if let Some(ref mut detector) = person_detector {
-                            detector.reset(); // 重置人员检测状态
-                        }
                     }
                 }
             }
@@ -357,9 +353,6 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                     //timeout_count = 0;
                     urls.clear();
                     image_dedup.clear(); // 清空去重缓存
-                    if let Some(ref mut detector) = person_detector {
-                        detector.reset(); // 重置人员检测状态
-                    }
                 } else {
                     //timeout_count += 1;
                 }
