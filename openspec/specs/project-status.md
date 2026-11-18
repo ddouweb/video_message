@@ -42,6 +42,11 @@
 - 文案使用中性词"躺卧"，不出现危险字眼
 - 同设备冷却期 `APP_LYING_ALERT_COOLDOWN_SECS`（默认 1800s）内不重复；`APP_LYING_ALERT_ENABLED=off` 可整体关闭
 
+### 3.2 日间长时间无人提醒
+- 白天（时间窗内）连续 `APP_INACTIVITY_ALERT_SECS`（默认 7200s）无确认有人 → 推送"⏰ 提醒: 日间已连续X小时未发现人员出现"；持续无人每隔该时长重提
+- 计时基线 = max(最近一次确认有人, 当日时间窗起点)：任一设备确认有人即重置（跨设备并集）；夜间不计时不提醒；服务重启从启动时刻起算
+- 依赖人员检测开启（检测关闭无法确认"有人"，此时本提醒不生效）；开关 `APP_INACTIVITY_ALERT_ENABLED`
+
 ### 4. 人员检测
 - YOLOv8n-pose（官方 ultralytics 导出约 13MB，不进 git，下载地址见 README 3.1；第三方转存实测有损坏）。带 17 个人体关键点头，同时兼容旧纯检测版 yolov8n.onnx（自动识别通道数）
 - 预处理：letterbox 640×640 居中灰底 114，RGB /255，**NCHW 逐平面填充**（按像素交错填充会导致输入错乱、检测失效——历史踩坑）
@@ -105,6 +110,8 @@ src/
 | APP_MODEL_PATH | ONNX 模型路径 | models/yolov8n-pose.onnx |
 | APP_LYING_ALERT_ENABLED | 躺卧姿态即时提醒开关 | on |
 | APP_LYING_ALERT_COOLDOWN_SECS | 同设备躺卧提醒冷却期(秒) | 1800 |
+| APP_INACTIVITY_ALERT_ENABLED | 日间长时间无人提醒开关 | on |
+| APP_INACTIVITY_ALERT_SECS | 日间连续无人多久提醒(秒) | 7200 |
 | APP_ALERT_COOLDOWN_SECS | webhook 即时提醒冷却期(秒) | 600 |
 | APP_POLLER | 轮询抓拍模式开关 | off |
 | EZVIZ_APP_KEY / EZVIZ_APP_SECRET | 萤石开放平台凭证 (poller 必填) | (必填) |

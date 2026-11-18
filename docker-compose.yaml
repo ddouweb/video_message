@@ -46,6 +46,8 @@ services:
       APP_PERSON_CONFIDENCE_THRESHOLD: "0.5"        #人员检测置信度阈值
       APP_LYING_ALERT_ENABLED: "on"                 #躺卧姿态即时提醒开关(on/off)
       APP_LYING_ALERT_COOLDOWN_SECS: 1800           #同设备躺卧提醒冷却期(秒)
+      APP_INACTIVITY_ALERT_ENABLED: "on"            #日间长时间无人提醒开关(on/off)
+      APP_INACTIVITY_ALERT_SECS: 7200               #日间连续无人多久推送提醒(秒)
     volumes:
       - /data/video_root/apps/app:/app:ro #应用可执行文件
       - /data/video_root/models:/models:ro #模型文件

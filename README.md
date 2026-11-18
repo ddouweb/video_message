@@ -86,6 +86,8 @@ docker compose down
 | `APP_PERSON_CONFIDENCE_THRESHOLD` | 人员检测置信度阈值 | 0.5 |
 | `APP_LYING_ALERT_ENABLED` | 躺卧姿态即时提醒开关（需 pose 模型） | on |
 | `APP_LYING_ALERT_COOLDOWN_SECS` | 同设备躺卧提醒冷却期（秒），期内不重复提醒 | 1800 |
+| `APP_INACTIVITY_ALERT_ENABLED` | 日间长时间无人提醒开关 | on |
+| `APP_INACTIVITY_ALERT_SECS` | 日间连续无人多久推送提醒（秒） | 7200 |
 
 复用的原有配置：`APP_START_TIME`/`APP_END_TIME`（白天/夜间分界，默认 7:00:00~23:00:00，夜间降频但不停止）、`APP_MESSAGE_SIZE`（单条图集最多图片数）、`APP_IMG_SERVER`/`APP_IMG_PATH_LAST`/`APP_IMG_PATH_HIS`（图片存储）。
 
@@ -126,6 +128,17 @@ curl -L -o models/yolov8n-pose.onnx https://github.com/ultralytics/assets/releas
 4. **框兜底**：关键点不可用或尺度不足时，人形框宽 > 高 × 1.8 才判躺卧。
 
 适用场景：独居老人长时间躺在地上/沙发上无人扶助等异常姿态的及时告知。误报率与光照、遮挡、拍摄角度相关，若提醒过多可调大冷却期或 `APP_LYING_ALERT_ENABLED=off` 关闭。
+
+### 3.5 日间长时间无人提醒
+
+白天（`APP_START_TIME`~`APP_END_TIME` 时间窗内）连续 `APP_INACTIVITY_ALERT_SECS`（默认 2 小时）没有在任何在线设备上确认发现人员，则推送一条"⏰ 提醒: 日间已连续2小时未发现人员出现"。适合看护场景：老人白天通常会有活动，长时间完全没出现过可能异常。
+
+计时规则：
+
+- 任一设备确认检测到人即重置计时（跨设备取并集）；
+- 夜间不计时也不提醒（夜间无人属正常）；昨夜有人、今晨一直没人 → 从当天时间窗起点（默认 7:00）起算，即 9:00 仍未有人则提醒；
+- 持续无人时每隔该时长重复提醒一次；
+- 依赖本地人员检测开启（`APP_PERSON_ALERT_ENABLED=true`），检测关闭时本提醒不生效（无法确认"有人"）。
 
 注意：萤石云消息回调（WarnBody 通道）若仍开启，附图默认是 `hikencod` 加密格式（需在萤石 App 关闭图片加密才能明文展示），加密图不会入库推送；该通道的即时提醒冷却期由 `APP_ALERT_COOLDOWN_SECS` 控制（默认 600）。
 

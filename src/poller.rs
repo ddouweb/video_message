@@ -199,6 +199,25 @@ async fn flush(app: &mut ChanMsg, urls: &mut Vec<String>, pic_count: &mut u8) {
     *pic_count = 0;
 }
 
+/// 日间无人计时的基线: 取"最近一次确认有人"与"今日时间窗起点"的较晚者.
+/// 昨夜有人、今晨窗起点之后没人 → 从今早窗起点起算(夜间无人属正常, 不计入连续时长);
+/// 有人出现在今日窗起点之后 → 从该时刻起算
+fn inactivity_baseline(
+    last_seen: chrono::DateTime<chrono::Local>,
+    now: chrono::DateTime<chrono::Local>,
+    window_start: NaiveTime,
+) -> chrono::DateTime<chrono::Local> {
+    match now
+        .date_naive()
+        .and_time(window_start)
+        .and_local_timezone(chrono::Local)
+        .single()
+    {
+        Some(day_start) => last_seen.max(day_start),
+        None => last_seen,
+    }
+}
+
 /// 萤石开放平台轮询抓拍模式:
 /// 周期刷新accessToken -> 白天定时对在线设备抓拍 -> 与上一张图对比相似度去重 -> 按原有规则推送
 pub async fn run_poller() {
@@ -257,6 +276,15 @@ pub async fn run_poller() {
         "on" | "true" | "1"
     );
     let lying_cooldown = Duration::from_secs(read_secs_env("APP_LYING_ALERT_COOLDOWN_SECS", 1800));
+    // 日间长时间无人提醒: 白天连续该秒数未确认有人则推送(需人员检测开启, 检测关闭无法确认有人)
+    let inactivity_alert_enabled = matches!(
+        std::env::var("APP_INACTIVITY_ALERT_ENABLED")
+            .unwrap_or_else(|_| "on".to_owned())
+            .to_lowercase()
+            .as_str(),
+        "on" | "true" | "1"
+    );
+    let inactivity_secs = read_secs_env("APP_INACTIVITY_ALERT_SECS", 7200);
 
     let img_server = std::env::var("APP_IMG_SERVER").expect("未设置APP_IMG_SERVER");
     let his_path =
@@ -302,9 +330,13 @@ pub async fn run_poller() {
     let mut next_due: HashMap<String, tokio::time::Instant> = HashMap::new();
     // 每设备最近一次躺卧提醒时间
     let mut lying_alert_last: HashMap<String, std::time::Instant> = HashMap::new();
+    // 日间长时间无人: 任一设备最近一次确认有人时刻(服务启动时刻起算), 与上次无人提醒时刻
+    let mut last_person_seen = chrono::Local::now();
+    let mut inactivity_alert_last: Option<chrono::DateTime<chrono::Local>> = None;
 
     log_info!(
-        "轮询抓拍模式已开启: 无人{interval}秒/有人{active_interval}秒/夜间{night_interval}秒, 到访结束{visit_end_secs}秒, token刷新周期{refresh_hours}小时, 相似度阈值{similarity_threshold}, 时间窗{start_time}~{end_time}"
+        "轮询抓拍模式已开启: 无人{interval}秒/有人{active_interval}秒/夜间{night_interval}秒, 到访结束{visit_end_secs}秒, token刷新周期{refresh_hours}小时, 相似度阈值{similarity_threshold}, 时间窗{start_time}~{end_time}, 日间无人提醒{}",
+        if inactivity_alert_enabled { format!("{inactivity_secs}秒") } else { "关闭".to_owned() }
     );
 
     let mut app = ChanMsg::new(db::get_db_pool().await);
@@ -370,6 +402,31 @@ pub async fn run_poller() {
             let t = chrono::Local::now().time();
             t < start_time || t > end_time
         };
+
+        // 日间长时间无人提醒: 白天连续 inactivity_secs 未确认有人则推送, 持续无人每隔
+        // 该时长重提一次. 基线=最近一次有人与今日窗起点的较晚者(昨夜有人今晨没人→从窗起点起算)
+        if inactivity_alert_enabled && !night && person_detector.is_some() {
+            let now_local = chrono::Local::now();
+            let baseline = inactivity_baseline(last_person_seen, now_local, start_time);
+            let absent = now_local.signed_duration_since(baseline).num_seconds();
+            let re_due = inactivity_alert_last.map_or(true, |t| {
+                now_local.signed_duration_since(t).num_seconds() >= inactivity_secs as i64
+            });
+            if absent >= inactivity_secs as i64 && re_due {
+                let label = if inactivity_secs >= 3600 {
+                    format!("{}小时", inactivity_secs / 3600)
+                } else {
+                    format!("{}分钟", inactivity_secs / 60)
+                };
+                app.send(
+                    format!("⏰ 提醒: 日间已连续{label}未发现人员出现"),
+                    "白天长时间未监测到人员活动, 请关注".to_owned(),
+                )
+                .await;
+                log_info!("日间连续{label}无人提醒已发送");
+                inactivity_alert_last = Some(now_local);
+            }
+        }
 
         // 获取在线设备列表
         let devices = match fetch_device_list(&client, &token.access_token).await {
@@ -490,6 +547,8 @@ pub async fn run_poller() {
             prev_hash.insert(serial.clone(), hash);
             if person_confirmed {
                 person_last.insert(serial.clone(), tokio::time::Instant::now());
+                last_person_seen = chrono::Local::now();
+                inactivity_alert_last = None; // 新一轮无人计时, 不受上次提醒时刻压制
             }
 
             // message_id 列为 varchar(31), 去连字符的UUID(32位)再截到31位
@@ -549,5 +608,38 @@ pub async fn run_poller() {
                 alerted_count = 0;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use chrono::TimeZone;
+
+    #[test]
+    fn baseline_is_today_window_start_when_person_seen_yesterday() {
+        // 昨晚21:00最后见人, 今日窗起点7:00后无人: 夜间不算, 基线=今日07:00, 09:00触发
+        let now = chrono::Local.with_ymd_and_hms(2026, 11, 18, 10, 0, 0).unwrap();
+        let last_seen = chrono::Local.with_ymd_and_hms(2026, 11, 17, 21, 0, 0).unwrap();
+        let b = inactivity_baseline(last_seen, now, NaiveTime::from_hms_opt(7, 0, 0).unwrap());
+        assert_eq!(b, chrono::Local.with_ymd_and_hms(2026, 11, 18, 7, 0, 0).unwrap());
+    }
+
+    #[test]
+    fn baseline_is_last_seen_when_inside_today_window() {
+        // 今日09:30见过人, 之后无人: 基线=09:30(比窗起点晚, 取有人时刻)
+        let now = chrono::Local.with_ymd_and_hms(2026, 11, 18, 12, 0, 0).unwrap();
+        let last_seen = chrono::Local.with_ymd_and_hms(2026, 11, 18, 9, 30, 0).unwrap();
+        let b = inactivity_baseline(last_seen, now, NaiveTime::from_hms_opt(7, 0, 0).unwrap());
+        assert_eq!(b, last_seen);
+    }
+
+    #[test]
+    fn baseline_is_window_start_when_service_started_before_window() {
+        // 服务启动于06:00(窗起点前), 一直无人: 基线=07:00窗起点而非启动时刻
+        let now = chrono::Local.with_ymd_and_hms(2026, 11, 18, 9, 0, 0).unwrap();
+        let started = chrono::Local.with_ymd_and_hms(2026, 11, 18, 6, 0, 0).unwrap();
+        let b = inactivity_baseline(started, now, NaiveTime::from_hms_opt(7, 0, 0).unwrap());
+        assert_eq!(b, chrono::Local.with_ymd_and_hms(2026, 11, 18, 7, 0, 0).unwrap());
     }
 }
