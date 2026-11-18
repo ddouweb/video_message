@@ -26,7 +26,7 @@
 
 ### 2. 轮询抓拍模式（poller，自建通道）
 - `APP_POLLER=on` 启用；accessToken 自动刷新（周期 `APP_TOKEN_REFRESH_HOURS`，失效自动重取）
-- 每轮拉取在线设备列表 (device/list，仅 status==1)，**按设备独立到点调度**抓拍 (device/capture)
+- 每轮拉取设备列表 (device/list，含离线设备供上下线比对)，仅对 status==1 在线设备**按设备独立到点调度**抓拍 (device/capture)
 - 自适应抓拍间隔：有人（该设备 `APP_VISIT_END_SECS` 内保留过有人图）60s / 白天无人 120s / 夜间无人 900s；**夜间不停拍**，时间窗仅作昼夜分界
 - 双重过滤后图才保留入库：① pHash 相似度（基准=该设备上一张**保留**图，被丢弃的图不更新基准，防渐进漂移）≥ `APP_SIMILARITY_THRESHOLD` 则丢弃；② YOLOv8n 检测无人则丢弃（检测失败放行，宁多推不漏报）
 - `message_id` 列为 varchar(31)，msg_id 用去连字符 UUID 截 31 位
@@ -42,7 +42,14 @@
 - 文案使用中性词"躺卧"，不出现危险字眼
 - 同设备冷却期 `APP_LYING_ALERT_COOLDOWN_SECS`（默认 1800s）内不重复；`APP_LYING_ALERT_ENABLED=off` 可整体关闭
 
-### 3.2 日间长时间无人提醒
+### 3.2 设备上下线提醒
+- 每轮 device/list（不受到期套餐限制）与上一轮在线状态比对，翻转即推送："⚠️ 设备离线"/"✅ 设备恢复在线"，昼夜均提醒（离线=该点位监控失效）
+- 接口调用失败不比对（自身网络故障不误报）；重启首轮只建基线不补报；解绑/删除不算离线
+- 同设备冷却 `APP_OFFLINE_ALERT_COOLDOWN_SECS`（默认 300s）内反复翻转只提醒一次
+- 附带修复：全部设备离线时按基准间隔重查列表，避免 next_due 清空后热循环
+
+### 3.3 日间长时间无人提醒
+
 - 白天（时间窗内）连续 `APP_INACTIVITY_ALERT_SECS`（默认 7200s）无确认有人 → 推送"⏰ 提醒: 日间已连续X小时未发现人员出现"；持续无人每隔该时长重提
 - 计时基线 = max(最近一次确认有人, 当日时间窗起点)：任一设备确认有人即重置（跨设备并集）；夜间不计时不提醒；服务重启从启动时刻起算
 - 依赖人员检测开启（检测关闭无法确认"有人"，此时本提醒不生效）；开关 `APP_INACTIVITY_ALERT_ENABLED`
@@ -115,6 +122,8 @@ src/
 | APP_LYING_ALERT_COOLDOWN_SECS | 同设备躺卧提醒冷却期(秒) | 1800 |
 | APP_INACTIVITY_ALERT_ENABLED | 日间长时间无人提醒开关 | on |
 | APP_INACTIVITY_ALERT_SECS | 日间连续无人多久提醒(秒) | 7200 |
+| APP_OFFLINE_ALERT_ENABLED | 设备上下线提醒开关 | on |
+| APP_OFFLINE_ALERT_COOLDOWN_SECS | 同设备上下线提醒冷却期(秒) | 300 |
 | APP_ALERT_COOLDOWN_SECS | webhook 即时提醒冷却期(秒) | 600 |
 | APP_POLLER | 轮询抓拍模式开关 | off |
 | EZVIZ_APP_KEY / EZVIZ_APP_SECRET | 萤石开放平台凭证 (poller 必填) | (必填) |
@@ -137,5 +146,5 @@ src/
 > 可在此记录未来提案方向
 
 - RTSP 子码流本地抽帧检测（摆脱萤石云抓拍计费与 4s 限制）
-- 套餐到期后换新 appKey 恢复云推送通道（每应用独立 120 天试用）
+- 云台/预置位 API 解锁：同账号换 appKey 已不可行（官方 FAQ：免费试用按开发者账号注册日起 120 天，账号级）；备选 = 新账号确权（120 天一轮）/ pyezviz 账号通道（非官方）/ RTSP 自建
 - 图集消息带时间轴/设备分组，长到访摘要更易读

@@ -71,11 +71,11 @@ async fn fetch_token(
     }
 }
 
-/// 返回在线设备的 (设备序列号, 设备名称) 列表
+/// 返回账号下设备 (设备序列号, 设备名称, 是否在线) 列表, 含离线设备(供上下线比对)
 async fn fetch_device_list(
     client: &reqwest::Client,
     access_token: &str,
-) -> Result<Vec<(String, String)>, EzError> {
+) -> Result<Vec<(String, String, bool)>, EzError> {
     let resp: serde_json::Value = client
         .post(DEVICE_LIST_URL)
         .form(&[
@@ -96,13 +96,12 @@ async fn fetch_device_list(
         let mut devices = Vec::new();
         if let Some(list) = resp["data"].as_array() {
             for dev in list {
-                // status: 1-在线, 0-离线
-                if dev["status"].as_i64() == Some(1) {
-                    let serial = dev["deviceSerial"].as_str().unwrap_or("").to_owned();
-                    let name = dev["deviceName"].as_str().unwrap_or("").to_owned();
-                    if !serial.is_empty() {
-                        devices.push((serial, name));
-                    }
+                let serial = dev["deviceSerial"].as_str().unwrap_or("").to_owned();
+                let name = dev["deviceName"].as_str().unwrap_or("").to_owned();
+                // status: 1-在线, 其他-离线
+                let online = dev["status"].as_i64() == Some(1);
+                if !serial.is_empty() {
+                    devices.push((serial, name, online));
                 }
             }
         }
@@ -218,6 +217,20 @@ fn inactivity_baseline(
     }
 }
 
+/// 设备上下线提醒: 与上一轮状态比对, 返回发生翻转的设备 (序列号, 名称, 当前是否在线).
+/// 首轮(prev 为空)作基线初始化不产生变化(服务重启不补报停机期间的事件);
+/// 从列表消失的设备(解绑/删除)不算离线, 由调用方遗忘
+fn device_status_changes(
+    prev: &HashMap<String, bool>,
+    current: &[(String, String, bool)],
+) -> Vec<(String, String, bool)> {
+    current
+        .iter()
+        .filter(|(serial, _, online)| prev.get(serial).map_or(false, |was| *was != *online))
+        .cloned()
+        .collect()
+}
+
 /// 萤石开放平台轮询抓拍模式:
 /// 周期刷新accessToken -> 白天定时对在线设备抓拍 -> 与上一张图对比相似度去重 -> 按原有规则推送
 pub async fn run_poller() {
@@ -285,6 +298,15 @@ pub async fn run_poller() {
         "on" | "true" | "1"
     );
     let inactivity_secs = read_secs_env("APP_INACTIVITY_ALERT_SECS", 7200);
+    // 设备上下线提醒: 每轮设备列表与上一轮在线状态比对, 翻转即推送; 冷却期防网络抖动刷屏
+    let offline_alert_enabled = matches!(
+        std::env::var("APP_OFFLINE_ALERT_ENABLED")
+            .unwrap_or_else(|_| "on".to_owned())
+            .to_lowercase()
+            .as_str(),
+        "on" | "true" | "1"
+    );
+    let offline_cooldown = Duration::from_secs(read_secs_env("APP_OFFLINE_ALERT_COOLDOWN_SECS", 300));
 
     let img_server = std::env::var("APP_IMG_SERVER").expect("未设置APP_IMG_SERVER");
     let his_path =
@@ -330,13 +352,17 @@ pub async fn run_poller() {
     let mut next_due: HashMap<String, tokio::time::Instant> = HashMap::new();
     // 每设备最近一次躺卧提醒时间
     let mut lying_alert_last: HashMap<String, std::time::Instant> = HashMap::new();
+    // 设备上下线提醒: 每设备上一轮在线状态与最近一次提醒时刻
+    let mut device_online: HashMap<String, bool> = HashMap::new();
+    let mut offline_alert_last: HashMap<String, std::time::Instant> = HashMap::new();
     // 日间长时间无人: 任一设备最近一次确认有人时刻(服务启动时刻起算), 与上次无人提醒时刻
     let mut last_person_seen = chrono::Local::now();
     let mut inactivity_alert_last: Option<chrono::DateTime<chrono::Local>> = None;
 
     log_info!(
-        "轮询抓拍模式已开启: 无人{interval}秒/有人{active_interval}秒/夜间{night_interval}秒, 到访结束{visit_end_secs}秒, token刷新周期{refresh_hours}小时, 相似度阈值{similarity_threshold}, 时间窗{start_time}~{end_time}, 日间无人提醒{}",
-        if inactivity_alert_enabled { format!("{inactivity_secs}秒") } else { "关闭".to_owned() }
+        "轮询抓拍模式已开启: 无人{interval}秒/有人{active_interval}秒/夜间{night_interval}秒, 到访结束{visit_end_secs}秒, token刷新周期{refresh_hours}小时, 相似度阈值{similarity_threshold}, 时间窗{start_time}~{end_time}, 日间无人提醒{}, 设备上下线提醒{}",
+        if inactivity_alert_enabled { format!("{inactivity_secs}秒") } else { "关闭".to_owned() },
+        if offline_alert_enabled { "开" } else { "关闭" }
     );
 
     let mut app = ChanMsg::new(db::get_db_pool().await);
@@ -428,7 +454,7 @@ pub async fn run_poller() {
             }
         }
 
-        // 获取在线设备列表
+        // 获取设备列表(含离线设备)
         let devices = match fetch_device_list(&client, &token.access_token).await {
             Ok(list) => list,
             Err(EzError::TokenExpired) => {
@@ -442,15 +468,63 @@ pub async fn run_poller() {
                 continue;
             }
         };
+
+        // 设备上下线提醒: 与上一轮比对, 状态翻转即推送; 冷却期内同设备不重复(防网络抖动刷屏)
+        // device/list 调用失败不会走到这里, 自身网络故障不会误报"全部离线"
+        if offline_alert_enabled {
+            for (serial, name, online) in device_status_changes(&device_online, &devices) {
+                let display = if name.is_empty() { serial.clone() } else { name.clone() };
+                let cooled = offline_alert_last
+                    .get(&serial)
+                    .map_or(true, |t| t.elapsed() >= offline_cooldown);
+                if cooled {
+                    let now = chrono::Local::now().format("%Y-%m-%d %H:%M");
+                    if online {
+                        app.send(
+                            format!("✅ 设备恢复在线: {display}"),
+                            format!("设备已恢复在线, 抓拍监控继续<br/>{now}"),
+                        )
+                        .await;
+                    } else {
+                        app.send(
+                            format!("⚠️ 设备离线: {display}"),
+                            format!("设备已离线, 抓拍监控暂停, 请检查电源或网络<br/>{now}"),
+                        )
+                        .await;
+                    }
+                    log_info!("设备{serial}({display})状态变化: {}", if online { "恢复在线" } else { "离线" });
+                    offline_alert_last.insert(serial.clone(), std::time::Instant::now());
+                } else {
+                    log_info!("设备{serial}状态变化(冷却期内不重复提醒)");
+                }
+            }
+        }
+        // 更新状态基线; 从列表消失的设备(解绑/删除)遗忘
+        device_online.retain(|s, _| devices.iter().any(|(serial, _, _)| serial == s));
+        for (serial, _, online) in &devices {
+            device_online.insert(serial.clone(), *online);
+        }
+
         if devices.is_empty() {
             next_due.clear();
             tokio::time::sleep(Duration::from_secs(interval)).await;
             continue;
         }
+        // 只对在线设备抓拍; 全部离线时按基准间隔重查列表(等恢复), 防止 next_due 清空后热循环
+        let online_devices: Vec<(String, String)> = devices
+            .iter()
+            .filter(|(_, _, online)| *online)
+            .map(|(serial, name, _)| (serial.clone(), name.clone()))
+            .collect();
+        if online_devices.is_empty() {
+            next_due.clear();
+            tokio::time::sleep(Duration::from_secs(interval)).await;
+            continue;
+        }
         // 清理已离线设备的过期计划, 避免空转
-        next_due.retain(|s, _| devices.iter().any(|(serial, _)| serial == s));
+        next_due.retain(|s, _| online_devices.iter().any(|(serial, _)| serial == s));
 
-        for (serial, name) in devices {
+        for (serial, name) in online_devices {
             // 未到该设备的抓拍时间
             if let Some(due) = next_due.get(&serial) {
                 if *due > tick_now {
@@ -641,5 +715,42 @@ mod tests {
         let started = chrono::Local.with_ymd_and_hms(2026, 11, 18, 6, 0, 0).unwrap();
         let b = inactivity_baseline(started, now, NaiveTime::from_hms_opt(7, 0, 0).unwrap());
         assert_eq!(b, chrono::Local.with_ymd_and_hms(2026, 11, 18, 7, 0, 0).unwrap());
+    }
+
+    #[test]
+    fn status_changes_first_scan_is_baseline() {
+        // 首轮扫描只建立基线, 不产生变化(重启不补报停机期间的事件)
+        let cur = vec![
+            ("S1".into(), "门口".into(), true),
+            ("S2".into(), "客厅".into(), false),
+        ];
+        assert!(device_status_changes(&HashMap::new(), &cur).is_empty());
+    }
+
+    #[test]
+    fn status_changes_detect_both_directions() {
+        // S2 离线->在线, S3 在线->离线, S1 不变
+        let prev = HashMap::from([
+            ("S1".to_string(), true),
+            ("S2".to_string(), false),
+            ("S3".to_string(), true),
+        ]);
+        let cur = vec![
+            ("S1".into(), "门口".into(), true),
+            ("S2".into(), "客厅".into(), true),
+            ("S3".into(), "院子".into(), false),
+        ];
+        let changes = device_status_changes(&prev, &cur);
+        assert_eq!(changes.len(), 2);
+        assert!(changes.iter().any(|(s, _, on)| s == "S2" && *on));
+        assert!(changes.iter().any(|(s, _, on)| s == "S3" && !*on));
+    }
+
+    #[test]
+    fn status_changes_ignore_vanished_device() {
+        // 从列表消失(解绑/删除)不算离线事件
+        let prev = HashMap::from([("S1".to_string(), true)]);
+        let cur: Vec<(String, String, bool)> = vec![("S2".into(), "新设备".into(), true)];
+        assert!(device_status_changes(&prev, &cur).is_empty());
     }
 }

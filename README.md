@@ -88,6 +88,8 @@ docker compose down
 | `APP_LYING_ALERT_COOLDOWN_SECS` | 同设备躺卧提醒冷却期（秒），期内不重复提醒 | 1800 |
 | `APP_INACTIVITY_ALERT_ENABLED` | 日间长时间无人提醒开关 | on |
 | `APP_INACTIVITY_ALERT_SECS` | 日间连续无人多久推送提醒（秒） | 7200 |
+| `APP_OFFLINE_ALERT_ENABLED` | 设备上下线提醒开关 | on |
+| `APP_OFFLINE_ALERT_COOLDOWN_SECS` | 同设备上下线提醒冷却期（秒），防网络抖动刷屏 | 300 |
 
 复用的原有配置：`APP_START_TIME`/`APP_END_TIME`（白天/夜间分界，默认 7:00:00~23:00:00，夜间降频但不停止）、`APP_MESSAGE_SIZE`（单条图集最多图片数）、`APP_IMG_SERVER`/`APP_IMG_PATH_LAST`/`APP_IMG_PATH_HIS`（图片存储）。
 
@@ -133,7 +135,19 @@ curl -L -o models/yolov8n-pose.onnx https://github.com/ultralytics/assets/releas
 
 适用场景：独居老人长时间躺在地上/沙发上无人扶助等异常姿态的及时告知。已知局限：高处俯拍下 2D 投影有固有歧义，**身体朝向与摄像头视线接近平行的躺卧无法与站姿区分（会漏报）**——这是几何极限，策略上宁少报不误报。误报率与光照、遮挡、拍摄角度相关，若提醒过多可调大冷却期或 `APP_LYING_ALERT_ENABLED=off` 关闭。
 
-### 3.5 日间长时间无人提醒
+### 3.5 设备上下线提醒
+
+每轮拉取设备列表时与上一轮的在线状态比对，状态翻转即推送："⚠️ 设备离线: 设备名"（设备已离线，抓拍监控暂停，请检查电源或网络）或"✅ 设备恢复在线: 设备名"。设备离线意味着该点位监控失效（断电/断网），无论昼夜都会及时推送。
+
+规则：
+
+- 检测依赖 `device/list`（不受到期套餐限制），发现延迟约为一轮抓拍间隔（1~2 分钟）；
+- 服务自身网络故障、接口调用失败不会误报（比对只在列表成功返回后进行）；
+- 服务重启后首轮扫描只建立基线不提醒（不补报停机期间的事件）；
+- 设备从账号解绑/删除不算离线事件；
+- 同设备冷却期 `APP_OFFLINE_ALERT_COOLDOWN_SECS`（默认 300 秒）内状态反复翻转只提醒一次，防网络抖动刷屏。
+
+### 3.6 日间长时间无人提醒
 
 白天（`APP_START_TIME`~`APP_END_TIME` 时间窗内）连续 `APP_INACTIVITY_ALERT_SECS`（默认 2 小时）没有在任何在线设备上确认发现人员，则推送一条"⏰ 提醒: 日间已连续2小时未发现人员出现"。适合看护场景：老人白天通常会有活动，长时间完全没出现过可能异常。
 
