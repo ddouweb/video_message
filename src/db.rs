@@ -78,7 +78,7 @@ pub(crate) async fn insert_image_url(
         .execute(&pool)
         .await
         .expect("Failed to execute time zone query");
-    println!("数据库连接成功！");
+    log_info!("数据库连接成功！");
     pool
 }*/
 
@@ -91,8 +91,8 @@ pub(crate) async fn get_db_pool() -> sqlx::Pool<sqlx::MySql> {
                 let time_zone = format!("SET time_zone = '{}';", time_zone);
                 //conn.execute(time_zone.as_str()).await?;
                 match conn.execute(time_zone.as_str()).await {
-                    Ok(_) => println!("数据库连接成功,时区设置成功！"),
-                    Err(e) => println!("数据库异常 异常信息: {}", e),
+                    Ok(_) => log_info!("数据库连接成功,时区设置成功！"),
+                    Err(e) => log_info!("数据库异常 异常信息: {}", e),
                 }
                 Ok(())
             })

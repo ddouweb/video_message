@@ -31,17 +31,17 @@ pub(crate) async fn save_image_bytes(
     let mut file = match File::create(&file_path).await {
         Ok(file) => file,
         Err(err) => {
-            println!("无法在{}创建文件: {}", last_path, err);
+            log_info!("无法在{}创建文件: {}", last_path, err);
             return;
         }
     };
 
     if let Err(err) = file.write_all(bytes).await {
-        println!("写入文件失败: {}", err);
+        log_info!("写入文件失败: {}", err);
         return;
     }
     if let Err(err) = file.flush().await {
-        println!("刷新文件缓冲区失败: {}", err);
+        log_info!("刷新文件缓冲区失败: {}", err);
         return;
     }
 
@@ -50,6 +50,6 @@ pub(crate) async fn save_image_bytes(
     let _ = std::fs::create_dir_all(&history_dir);
     let history_path: std::path::PathBuf = Path::new(&history_dir).join(&filename);
     if let Err(err) = std::fs::copy(&file_path, &history_path) {
-        println!("复制文件失败: {}", err);
+        log_info!("复制文件失败: {}", err);
     }
 }

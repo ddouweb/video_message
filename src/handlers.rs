@@ -24,7 +24,7 @@ pub async fn webhook(
     let result: serde_json::Value = match serde_json::from_str::<Message>(&body) {
         Ok(msg) => handle_request(msg, state).await,
         Err(e) => {
-            eprintln!("Error parsing webhook message: {}", e);
+            log_error!("Error parsing webhook message: {}", e);
             //json!({ "error": "Failed to parse webhook message" })
             json!({ "messageId": 1 })
         }
@@ -40,7 +40,7 @@ pub async fn handle_request(
         let msg_id = header.get_message_id();
         let sender: mpsc::Sender<Message> = state.lock().unwrap().sender.clone();
         if let Err(e) = sender.send(msg).await {
-            eprintln!("Failed to send message: {}", e);
+            log_error!("Failed to send message: {}", e);
         }
         json!({ "messageId": msg_id})
     } else {
@@ -68,14 +68,14 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
         .unwrap_or_else(|_| "10".to_owned())
         .parse::<u8>()
         .expect("设置APP_MIN_PIC_COUNT错误");
-    println!("最小接收图片数量: {min_pic_count}");
+    log_info!("最小接收图片数量: {min_pic_count}");
 
 
     let max_pic_count = std::env::var("APP_MESSAGE_SIZE")
                 .unwrap_or_else(|_| "50".to_owned())
                 .parse::<u8>()
                 .expect("设置APP_MESSAGE_SIZE错误!");
-    println!("最大接收图片数量: {max_pic_count}");
+    log_info!("最大接收图片数量: {max_pic_count}");
 
     // 有人出现即时提醒的冷却期: 期内不重复即时推送, 告警图静默累计走批量摘要
     let alert_cooldown = std::time::Duration::from_secs(
@@ -84,16 +84,16 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
             .parse::<u64>()
             .unwrap_or(600),
     );
-    println!("有人出现即时提醒冷却期: {}秒", alert_cooldown.as_secs());
+    log_info!("有人出现即时提醒冷却期: {}秒", alert_cooldown.as_secs());
 
     /*let max_timeout_count = env::var("APP_MAX_TIMEOUT_COUNT")
         .unwrap_or_else(|_| "3".to_owned())
         .parse::<u8>()
         .expect("设置APP_MIN_PIC_COUNT错误");
-    println!("最大超时次数: {max_timeout_count}");*/
+    log_info!("最大超时次数: {max_timeout_count}");*/
 
     let img_server = std::env::var("APP_IMG_SERVER").expect("未设置APP_IMG_SERVER");
-    println!("图片服务器地址: {img_server}");
+    log_info!("图片服务器地址: {img_server}");
 
     // 初始化图片去重
     let p_hash_threshold = env::var("APP_P_HASH_THRESHOLD")
@@ -108,7 +108,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
 
     let mut image_dedup = ImageDedup::new(p_hash_threshold, ai_similarity_threshold, 1000);
     let http_client = reqwest::Client::new();
-    println!("图片去重功能已启用，pHash阈值: {}, AI相似度阈值: {}", p_hash_threshold, ai_similarity_threshold);
+    log_info!("图片去重功能已启用，pHash阈值: {}, AI相似度阈值: {}", p_hash_threshold, ai_similarity_threshold);
 
     // 初始化人员检测
     let person_alert_enabled = env::var("APP_PERSON_ALERT_ENABLED")
@@ -128,11 +128,11 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
         let model_path = std::path::Path::new(&model_path);
         match PersonDetector::new(model_path, person_confidence) {
             Ok(detector) => {
-                println!("人员检测功能已启用，置信度阈值: {}", person_confidence);
+                log_info!("人员检测功能已启用，置信度阈值: {}", person_confidence);
                 Some(detector)
             }
             Err(e) => {
-                eprintln!("人员检测初始化失败: {}", e);
+                log_error!("人员检测初始化失败: {}", e);
                 None
             }
         }
@@ -142,13 +142,13 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
 
     let now = chrono::Local::now().time();
     if now >= start_time && now <= end_time {
-        println!(
+        log_info!(
             "当前时间{}:{}在{start_time}到{end_time}之间",
             chrono::Local::now().hour(),
             chrono::Local::now().minute()
         );
     } else {
-        println!(
+        log_info!(
             "当前时间{}:{}不在{start_time}到{end_time}之间",
             chrono::Local::now().hour(),
             chrono::Local::now().minute()
@@ -179,12 +179,12 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                             Ok(resp) => match resp.bytes().await {
                                                 Ok(b) => b,
                                                 Err(e) => {
-                                                    eprintln!("下载告警图片失败: {e}");
+                                                    log_error!("下载告警图片失败: {e}");
                                                     continue;
                                                 }
                                             },
                                             Err(e) => {
-                                                eprintln!("下载告警图片失败: {e}");
+                                                log_error!("下载告警图片失败: {e}");
                                                 continue;
                                             }
                                         };
@@ -197,7 +197,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                                 Some(h)
                                             }
                                             Err(_) => {
-                                                eprintln!(
+                                                log_error!(
                                                     "告警图片无法解码(疑似hikencod加密), 跳过: {}",
                                                     picture.get_url()
                                                 );
@@ -222,7 +222,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                         };
 
                                         if is_dup {
-                                            println!("过滤重复图片: {}", picture.get_url());
+                                            log_info!("过滤重复图片: {}", picture.get_url());
                                             continue; // 跳过，不计入 pic_count
                                         }
 
@@ -294,7 +294,7 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                                     .await;
                                 }
                                 Body::Unknown(_) => {
-                                    //println!("返回的信息: {}", data);
+                                    //log_info!("返回的信息: {}", data);
                                 }
                                 _ => {}
                             };
@@ -325,11 +325,11 @@ pub async fn handle_message(mut receiver: mpsc::Receiver<Message>) {
                 }
             }
             Ok(None) => {
-                println!("Channel closed.");
+                log_info!("Channel closed.");
                 break;
             }
             Err(_) => {
-                println!("获取管道数据超时");
+                log_info!("获取管道数据超时");
                 date_dir = chrono::Local::now().format("%Y-%m-%d").to_string();
                 let mut current_compare_pic_count = min_pic_count;
                 //let mut current_compare_timeout_count = max_timeout_count;

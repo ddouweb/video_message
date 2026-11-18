@@ -23,6 +23,7 @@ services:
     image: webtao/scratch:zoneinfo
     container_name: video_message
     environment:
+      TZ: Asia/Shanghai #日志时间戳使用本地时区(镜像已含zoneinfo)
       DATABASE_URL: mysql://video:123456@mariadb:3306/video?timezone=Asia/Shanghai
       APP_API_TOKEN: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  #PUSH_PLUS密钥
       APP_API_TOPIC: video                            #PUSH_PLUS群组编码

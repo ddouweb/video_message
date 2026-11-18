@@ -48,10 +48,14 @@
 - 输出 [1,56,8400]（pose：4 框 + 1 person 分数 + 17×3 关键点；person 分数固定在第 4 行）；纯检测版为 [1,84,8400]（dims[1]<dims[2] 时类别维在前）。无特征头，去重自动回退纯 pHash
 - 配置: `APP_PERSON_ALERT_ENABLED` (默认 true)、`APP_PERSON_CONFIDENCE_THRESHOLD` (默认 0.5)、`APP_MODEL_PATH` (默认 models/yolov8n-pose.onnx)
 
-### 4.1 躺卧姿态判定（detector 内部）
-- 对每个超阈值的 person 候选框：取肩中点（关键点 5/6）与髋中点（关键点 11/12），躯干连线**横向分量 > 纵向分量 × 1.2** 判为躺卧（比值判定，与坐标尺度无关）
-- 关键点置信度 ≥ 0.3 才参与；肩/髋关键点不可用时回退**人形框宽 > 高 × 1.5** 兜底
-- 躺卧误报/漏报与光照、遮挡、拍摄角度相关，阈值（`TORSO_RATIO`/`KP_MIN_CONF`/`LYING_BOX_RATIO`，detector.rs 常量）可按实际场景调
+### 4.1 躺卧姿态判定（detector 内部，两级 + 兜底）
+- 对每个超阈值的 person 候选框，取肩中点（关键点 5/6）与髋中点（11/12）：
+  1. **躯干水平**：横向分量 > 纵向 × 1.2（`TORSO_RATIO`），否则视为站立/坐姿
+  2. **腿也水平**：髋→膝中点连线横向 > 纵向 × 1.7（`LEG_RATIO`）才判躺卧——弯腰/弓步劳作时躯干同样水平但腿竖直/斜向（实测与水平夹角 36°~68°），据此排除（2026-11-17 三次弯腰劳作误报后引入）
+- **尺度守卫**：躯干两点距离 < 30px 或腿 < 15px（640 输入坐标系）说明目标太小太远，关键点比值被噪声主导（实测远处站立者被测出 28° 倾斜躯干），退回框判定
+- 关键点置信度 ≥ 0.3 才参与；关键点不可用或尺度不足时回退**人形框宽 > 高 × 1.8**（`LYING_BOX_RATIO`）兜底
+- 判定为躺卧时打印判定依据日志（关键点横纵分量 / 框宽高）
+- 躺卧误报/漏报与光照、遮挡、拍摄角度相关，阈值（detector.rs 常量）可按实际场景调；test_assets/ 下有真实误报图作回归测试（bent_over*.jpg）
 
 ### 5. 图片去重
 - **pHash 感知哈希**: DoubleGradient 8×8，快速相似图片检测
@@ -62,6 +66,7 @@
 ```
 src/
 ├── main.rs          # 入口，Web 服务器启动 + poller 线程(panic 守护，异常 10s 重启)
+├── logging.rs       # 带时间戳日志宏 log_info!/log_error!（全项目打印统一走这里）
 ├── routers.rs       # 路由配置
 ├── handlers.rs      # webhook 请求处理（去重/检测/推送）
 ├── poller.rs        # 轮询抓拍模式（token 刷新/设备调度/自适应间隔/到访批次推送）
@@ -113,7 +118,7 @@ src/
 
 ## 部署要点
 
-- docker-compose: nginx (443/80) + mariadb + video_message (scratch 镜像，二进制只读挂载，models/ 与截图目录挂载)
+- docker-compose: nginx (443/80) + mariadb + video_message (scratch 镜像，二进制只读挂载，models/ 与截图目录挂载)；video_message 需设 `TZ=Asia/Shanghai`（镜像含 zoneinfo），否则日志时间戳为 UTC
 - 真实密钥只放服务器 compose / 本地 `.env`（均已 gitignore）；仓库 compose 用占位符
 - 抓拍接口按次计费（日 1 万次免费，同设备间隔 ≥4s）；当前最坏用量 ~2000 次/天
 

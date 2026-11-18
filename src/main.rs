@@ -4,6 +4,8 @@ use tokio::sync::mpsc;
 use std::sync::Arc;
 use std::sync::Mutex;
 
+#[macro_use]
+mod logging;
 mod util;
 mod models;
 mod db;
@@ -25,7 +27,7 @@ async fn main() -> std::io::Result<()> {
             match handle.await {
                 Ok(()) => break, // 正常返回(模式未开启)则不再重启
                 Err(_) => {
-                    eprintln!("轮询抓拍线程异常退出, 10秒后重启");
+                    log_error!("轮询抓拍线程异常退出, 10秒后重启");
                     tokio::time::sleep(std::time::Duration::from_secs(10)).await;
                 }
             }

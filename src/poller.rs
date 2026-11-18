@@ -209,7 +209,7 @@ pub async fn run_poller() {
         "on" | "true" | "1"
     );
     if !poller_on {
-        println!("轮询抓拍模式未开启(APP_POLLER)");
+        log_info!("轮询抓拍模式未开启(APP_POLLER)");
         return;
     }
 
@@ -281,11 +281,11 @@ pub async fn run_poller() {
     let mut person_detector: Option<PersonDetector> = if person_filter_enabled {
         match PersonDetector::new(std::path::Path::new(&model_path), person_confidence) {
             Ok(d) => {
-                println!("轮询抓拍人员过滤已启用, 模型: {model_path}, 置信度阈值: {person_confidence}");
+                log_info!("轮询抓拍人员过滤已启用, 模型: {model_path}, 置信度阈值: {person_confidence}");
                 Some(d)
             }
             Err(e) => {
-                eprintln!("人员检测初始化失败(轮询抓拍不过滤): {}", e);
+                log_error!("人员检测初始化失败(轮询抓拍不过滤): {}", e);
                 None
             }
         }
@@ -303,7 +303,7 @@ pub async fn run_poller() {
     // 每设备最近一次躺卧提醒时间
     let mut lying_alert_last: HashMap<String, std::time::Instant> = HashMap::new();
 
-    println!(
+    log_info!(
         "轮询抓拍模式已开启: 无人{interval}秒/有人{active_interval}秒/夜间{night_interval}秒, 到访结束{visit_end_secs}秒, token刷新周期{refresh_hours}小时, 相似度阈值{similarity_threshold}, 时间窗{start_time}~{end_time}"
     );
 
@@ -342,10 +342,10 @@ pub async fn run_poller() {
                     token.access_token = t;
                     token.refresh_at =
                         chrono::Local::now() + chrono::Duration::hours(refresh_hours as i64);
-                    println!("accessToken已刷新, 下次刷新: {}", token.refresh_at);
+                    log_info!("accessToken已刷新, 下次刷新: {}", token.refresh_at);
                 }
                 Err(e) => {
-                    eprintln!("获取accessToken失败: {}", e);
+                    log_error!("获取accessToken失败: {}", e);
                     tokio::time::sleep(Duration::from_secs(interval)).await;
                     continue;
                 }
@@ -355,10 +355,10 @@ pub async fn run_poller() {
         // 到访结束(超窗无新保留图): 有即时提醒之外的新图才汇总推送, 否则只清空缓冲
         if pic_count > 0 && last_add.elapsed() >= Duration::from_secs(visit_end_secs) {
             if usize::from(pic_count) > alerted_count {
-                println!("到访结束推送: {pic_count}张");
+                log_info!("到访结束推送: {pic_count}张");
                 flush(&mut app, &mut urls, &mut pic_count).await;
             } else {
-                println!("到访结束: {pic_count}张均已即时提醒, 跳过图集");
+                log_info!("到访结束: {pic_count}张均已即时提醒, 跳过图集");
                 urls.clear();
                 pic_count = 0;
             }
@@ -375,12 +375,12 @@ pub async fn run_poller() {
         let devices = match fetch_device_list(&client, &token.access_token).await {
             Ok(list) => list,
             Err(EzError::TokenExpired) => {
-                println!("accessToken已过期, 下轮重新获取");
+                log_info!("accessToken已过期, 下轮重新获取");
                 token.access_token.clear();
                 continue;
             }
             Err(e) => {
-                eprintln!("获取设备列表失败: {}", e);
+                log_error!("获取设备列表失败: {}", e);
                 tokio::time::sleep(Duration::from_secs(interval)).await;
                 continue;
             }
@@ -404,12 +404,12 @@ pub async fn run_poller() {
             let pic_url = match capture(&client, &token.access_token, &serial).await {
                 Ok(url) => url,
                 Err(EzError::TokenExpired) => {
-                    println!("accessToken已过期, 下轮重新获取");
+                    log_info!("accessToken已过期, 下轮重新获取");
                     token.access_token.clear();
                     break;
                 }
                 Err(e) => {
-                    eprintln!("设备{}抓拍失败: {}", serial, e);
+                    log_error!("设备{}抓拍失败: {}", serial, e);
                     let iv = next_capture_interval(&person_last, &serial, night, visit_end_secs, interval, active_interval, night_interval);
                     next_due.insert(serial.clone(), tokio::time::Instant::now() + Duration::from_secs(iv));
                     continue;
@@ -427,14 +427,14 @@ pub async fn run_poller() {
                 Ok(resp) => match resp.bytes().await {
                     Ok(b) => b,
                     Err(e) => {
-                        eprintln!("下载图片数据失败: {}", e);
+                        log_error!("下载图片数据失败: {}", e);
                         let iv = next_capture_interval(&person_last, &serial, night, visit_end_secs, interval, active_interval, night_interval);
                         next_due.insert(serial.clone(), tokio::time::Instant::now() + Duration::from_secs(iv));
                         continue;
                     }
                 },
                 Err(e) => {
-                    eprintln!("下载图片数据失败: {}", e);
+                    log_error!("下载图片数据失败: {}", e);
                     let iv = next_capture_interval(&person_last, &serial, night, visit_end_secs, interval, active_interval, night_interval);
                     next_due.insert(serial.clone(), tokio::time::Instant::now() + Duration::from_secs(iv));
                     continue;
@@ -445,7 +445,7 @@ pub async fn run_poller() {
             let hash = match compute_phash_from_memory(&bytes) {
                 Ok(h) => h,
                 Err(e) => {
-                    eprintln!("计算pHash失败: {}", e);
+                    log_error!("计算pHash失败: {}", e);
                     let iv = next_capture_interval(&person_last, &serial, night, visit_end_secs, interval, active_interval, night_interval);
                     next_due.insert(serial.clone(), tokio::time::Instant::now() + Duration::from_secs(iv));
                     continue;
@@ -459,7 +459,7 @@ pub async fn run_poller() {
             if similarity >= similarity_threshold {
                 // 丢弃的图不更新基准, 仍与上一张基准图对比
                 // (避免渐进漂移: 每张都与前一张相差不大而被连续丢弃, 偏差累积过大的图推不出去)
-                println!("设备{}图片与基准图相似度{:.2}, 丢弃", serial, similarity);
+                log_info!("设备{}图片与基准图相似度{:.2}, 丢弃", serial, similarity);
                 let iv = next_capture_interval(&person_last, &serial, night, visit_end_secs, interval, active_interval, night_interval);
                 next_due.insert(serial.clone(), tokio::time::Instant::now() + Duration::from_secs(iv));
                 continue;
@@ -472,7 +472,7 @@ pub async fn run_poller() {
                 match detector.detect(&bytes) {
                     Ok(r) => {
                         if !r.person {
-                            println!("设备{}图片未检测到人员, 丢弃", serial);
+                            log_info!("设备{}图片未检测到人员, 丢弃", serial);
                             let iv = next_capture_interval(&person_last, &serial, night, visit_end_secs, interval, active_interval, night_interval);
                             next_due.insert(serial.clone(), tokio::time::Instant::now() + Duration::from_secs(iv));
                             continue;
@@ -481,7 +481,7 @@ pub async fn run_poller() {
                         lying_detected = r.lying;
                     }
                     Err(e) => {
-                        eprintln!("设备{}人员检测失败({}), 保留图片", serial, e);
+                        log_error!("设备{}人员检测失败({}), 保留图片", serial, e);
                     }
                 }
             }
@@ -531,7 +531,7 @@ pub async fn run_poller() {
                 if due {
                     let message = format!("<img src='{img_url}' />");
                     app.send(format!("⚠️ 请关注: {name} 有人躺卧"), message).await;
-                    println!("设备{}躺卧姿态提醒已发送", serial);
+                    log_info!("设备{}躺卧姿态提醒已发送", serial);
                     lying_alert_last.insert(serial.clone(), std::time::Instant::now());
                 }
             }
@@ -544,7 +544,7 @@ pub async fn run_poller() {
             next_due.insert(serial.clone(), tokio::time::Instant::now() + Duration::from_secs(iv));
 
             if pic_count >= max_pic_count {
-                println!("轮询抓拍满额推送: {pic_count}张");
+                log_info!("轮询抓拍满额推送: {pic_count}张");
                 flush(&mut app, &mut urls, &mut pic_count).await;
                 alerted_count = 0;
             }

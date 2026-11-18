@@ -46,7 +46,7 @@ impl Call {
     //     msg_id: &str,
     //     data_type: &str,
     // ) {
-    //     //println!("debug:收到视频呼叫消息");
+    //     //log_info!("debug:收到视频呼叫消息");
     //     let message = format!("<img src='{}' />", &self.decrypted_picture);
     //     //state.lock().unwrap().get_sender().send("视频呼叫消息".to_owned());
     //     //crate::db::insert_image_url(state.lock().unwrap().get_db_pool(), msg_id,data_type, &self.decrypted_picture, data_type).await;

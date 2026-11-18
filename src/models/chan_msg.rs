@@ -81,37 +81,37 @@ impl ChanMsg {
                         // else {
                         //     // 请求成功，继续处理其他逻辑
                         //     let data = data.get("data").unwrap();
-                        //     println!("api接口返回成功:{data}");
+                        //     log_info!("api接口返回成功:{data}");
                         // }
                     }
                 }
                 Err(e) => {
-                    println!("接口请求出现错误：{}", e);
+                    log_info!("接口请求出现错误：{}", e);
                     //self.disable_api_send();
                 }
             }
         } else {
-            println!("当前接口次数已经用完，不可使用！");
+            log_info!("当前接口次数已经用完，不可使用！");
         }
     }
     //增加请求次数
     fn increment_api_count(&mut self) {
         if let Ok(mut count) = self.api_send_count.lock() {
             *count += 1;
-            println!(
+            log_info!(
                 "{} 已经发送请求：{}次",
                 chrono::prelude::Local::now().naive_local().date(),
                 count
             );
         } else {
             // 处理获取锁失败的情况
-            eprintln!("Failed to acquire lock for api_send_count");
+            log_error!("Failed to acquire lock for api_send_count");
         }
     }
     //今日不再允许推送
     fn disable_api_send(&mut self) {
         let mut count = self.api_send_count.lock().unwrap();
-        println!(
+        log_info!(
             "{} 今日不再允许推送,已经使用{}次",
             chrono::prelude::Local::now().naive_local().date(),
             count
