@@ -641,22 +641,11 @@ pub async fn run_poller() {
             let img_url = format!("{img_server}/{id}.jpg");
             urls.push(img_url.clone());
 
-            // 有人出现即时提醒: 到访开始时推一条(确认有人才提醒, 检测失败的图只走图集);
-            // 到访期间长时间有人, 每隔 remind_secs 补一条
-            let visit_start = last_add.elapsed() >= Duration::from_secs(visit_end_secs);
-            if person_confirmed
-                && (visit_start
-                    || last_person_alert
-                        .map_or(true, |t| t.elapsed() >= Duration::from_secs(remind_secs)))
-            {
-                let message = format!("<img src='{img_url}' />");
-                app.send(format!("⚠️ 有人出现: {name}"), message).await;
-                last_person_alert = Some(std::time::Instant::now());
-                alerted_count += 1;
-            }
-
             // 躺卧姿态即时提醒: 独立通道绕过到访批次节奏, 冷却期内同设备不重复
             // (文案用中性词"躺卧", 避免危险字眼)
+            // 该图已推躺卧提醒时不再叠加"有人出现"(同图双推是噪音, 躺卧提醒已告知有人在场),
+            // 且计入已提醒数, 到访收尾图集不再重复发它
+            let mut lying_sent = false;
             if lying_detected && lying_alert_enabled {
                 let due = lying_alert_last
                     .get(&serial)
@@ -666,7 +655,25 @@ pub async fn run_poller() {
                     app.send(format!("⚠️ 请关注: {name} 有人躺卧"), message).await;
                     log_info!("设备{}躺卧姿态提醒已发送", serial);
                     lying_alert_last.insert(serial.clone(), std::time::Instant::now());
+                    lying_sent = true;
+                    alerted_count += 1;
+                    last_person_alert = Some(std::time::Instant::now());
                 }
+            }
+
+            // 有人出现即时提醒: 到访开始时推一条(确认有人才提醒, 检测失败的图只走图集);
+            // 到访期间长时间有人, 每隔 remind_secs 补一条
+            let visit_start = last_add.elapsed() >= Duration::from_secs(visit_end_secs);
+            if person_confirmed
+                && !lying_sent
+                && (visit_start
+                    || last_person_alert
+                        .map_or(true, |t| t.elapsed() >= Duration::from_secs(remind_secs)))
+            {
+                let message = format!("<img src='{img_url}' />");
+                app.send(format!("⚠️ 有人出现: {name}"), message).await;
+                last_person_alert = Some(std::time::Instant::now());
+                alerted_count += 1;
             }
 
             pic_count += 1;
