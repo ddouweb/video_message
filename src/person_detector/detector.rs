@@ -11,25 +11,41 @@ const BOX_VALUES: usize = 4;
 const PERSON_SCORE_INDEX: usize = BOX_VALUES;
 // pose 输出 56 通道(4框+1人+17点x3); 纯检测 84 通道
 const POSE_CHANNELS: usize = 56;
-// COCO 17 关键点索引: 5/6=左右肩, 11/12=左右髋, 13/14=左右膝
+// COCO 17 关键点索引: 5/6=左右肩, 11/12=左右髋, 13/14=左右膝, 15/16=左右踝
 const KP_SHOULDER_L: usize = 5;
 const KP_SHOULDER_R: usize = 6;
 const KP_HIP_L: usize = 11;
 const KP_HIP_R: usize = 12;
 const KP_KNEE_L: usize = 13;
 const KP_KNEE_R: usize = 14;
+const KP_ANKLE_L: usize = 15;
+const KP_ANKLE_R: usize = 16;
 // 关键点置信度低于此值不参与姿态判断
 const KP_MIN_CONF: f32 = 0.3;
-// 躺卧判定第一步: 肩髋中点连线的横向分量明显大于纵向(躯干接近水平)
-const TORSO_RATIO: f32 = 1.2;
+// 躺卧判定第一步: 肩髋中点连线的横向分量明显大于纵向(躯干接近水平, <=~34°).
+// 实测坐地前倾从高处俯拍时躯干投影可达35°(横纵33/23), 真躺卧应<~25°, 取1.5
+const TORSO_RATIO: f32 = 1.5;
 // 第二步: 髋膝连线接近水平(与水平夹角<~30°). 弯腰/俯身/弓步劳作时躯干同样接近水平,
 // 但腿呈竖直或斜向(实测弓步弯腰的腿与水平夹角36°~68°), 需据此排除; 躺卧者全身横卧,
 // 髋->膝也与水平近乎平行. 重复候选框的关键点估计有±数像素噪声, 阈值需留足裕量
 const LEG_RATIO: f32 = 1.7;
+// 第三步: 膝踝连线也须偏横向. 蹲姿/坐地伸腿从高处俯拍时, 躯干前倾+大腿水平与躺卧在
+// 2D投影上几乎同形(实测坐姿误报: 躯干33/23, 髋膝25/14 两级全过), 但蹲/坐者小腿竖直
+// (踝在膝正下方/斜下方), 躺卧者小腿沿身体横伸(踝与膝同高), 据此区分
+const ANKLE_RATIO: f32 = 1.5;
 // 关键点尺度守卫: 躯干/髋膝两点距离(640输入坐标系)小于此值说明目标太远太小,
 // 关键点估计噪声占主导(实测远处站立者被测出28°倾斜躯干), 比值不可信, 退回框判定
 const MIN_TORSO_LEN: f32 = 30.0;
 const MIN_LEG_LEN: f32 = 15.0;
+const MIN_ANKLE_LEN: f32 = 12.0;
+// 第四级: 肩->踝"体轴"须接近水平(躺卧者头脚连线沿地面横伸)
+const AXIS_RATIO: f32 = 1.5;
+// 第四级: 躯干/大腿/小腿三段与体轴的夹角须小于 ~24°(sin24°≈0.40).
+// 躺卧=肩髋膝踝近似一条直线; 坐地伸腿/蹲姿是折线: 实测坐姿膝高于髋和踝
+// (低-高-低Z字形), 大腿与体轴夹角33°(sin0.49)被此门拒绝
+const COLINEAR_SIN: f32 = 0.40;
+// NMS: 同一目标的重复锚框 IoU 超过此值被抑制(各重复框带独立关键点, 是误报放大器)
+const NMS_IOU: f32 = 0.5;
 // 肩髋关键点都不可用时的兜底: 人形框宽明显超过高(letterbox 等比缩放不改变宽高比).
 // 取保守值降低误报(弯腰者的框也可能偏宽)
 const LYING_BOX_RATIO: f32 = 1.8;
@@ -168,21 +184,48 @@ fn parse_detections(output: &ArrayViewD<f32>, threshold: f32) -> (f32, usize, bo
     };
 
     let mut best = 0.0f32;
-    let mut count = 0usize;
-    let mut lying = false;
+    let mut cands: Vec<usize> = Vec::new();
     for a in 0..anchors {
         let score = at(PERSON_SCORE_INDEX, a);
         if score > best {
             best = score;
         }
         if score >= threshold {
-            count += 1;
-            if has_pose && !lying {
-                lying = anchor_is_lying(&at, a, channels);
-            }
+            cands.push(a);
         }
     }
+    // 贪心 NMS: YOLO 对同一目标输出大量重叠锚框(实测1人产生9框), 各带独立关键点
+    // 回归, 任一拼出躺卧形即触发, 是误报放大器; 只保留局部最高分的框参与计数/姿态
+    cands.sort_by(|&a, &b| {
+        at(PERSON_SCORE_INDEX, b)
+            .partial_cmp(&at(PERSON_SCORE_INDEX, a))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut kept: Vec<usize> = Vec::new();
+    for a in cands {
+        let overlapped = kept.iter().any(|&b| box_iou(&at, a, b) > NMS_IOU);
+        if !overlapped {
+            kept.push(a);
+        }
+    }
+    let count = kept.len();
+    let lying = has_pose && kept.iter().any(|&a| anchor_is_lying(&at, a, channels));
     (best, count, lying)
+}
+
+/// 两个锚框的 IoU(框为中心点+宽高格式)
+fn box_iou(at: &dyn Fn(usize, usize) -> f32, a: usize, b: usize) -> f32 {
+    let (ax, ay, aw, ah) = (at(0, a), at(1, a), at(2, a), at(3, a));
+    let (bx, by, bw, bh) = (at(0, b), at(1, b), at(2, b), at(3, b));
+    let (x1, y1) = ((ax - aw / 2.0).max(bx - bw / 2.0), (ay - ah / 2.0).max(by - bh / 2.0));
+    let (x2, y2) = ((ax + aw / 2.0).min(bx + bw / 2.0), (ay + ah / 2.0).min(by + bh / 2.0));
+    let inter = (x2 - x1).max(0.0) * (y2 - y1).max(0.0);
+    let union = aw * ah + bw * bh - inter;
+    if union <= 0.0 {
+        0.0
+    } else {
+        inter / union
+    }
 }
 
 /// 判断单个候选框是否躺卧: 肩/髋/膝关键点两级判定, 关键点不可用回退框宽高比
@@ -223,14 +266,47 @@ fn anchor_is_lying(at: &dyn Fn(usize, usize) -> f32, a: usize, channels: usize) 
             // 目标太小时关键点两点距离只有十几像素, ±数像素噪声主导比值判定
             // (实测远处站立者被测出28°倾斜躯干), 尺度不足不采信, 退回框判定
             if torso_len >= MIN_TORSO_LEN && leg_len >= MIN_LEG_LEN {
-                if ldx > ldy * LEG_RATIO {
-                    log_info!(
-                        "躺卧判定(关键点): 躯干横纵 {:.0}/{:.0}, 髋膝横纵 {:.0}/{:.0}",
-                        dx, dy, ldx, ldy
-                    );
-                    return true;
+                if ldx <= ldy * LEG_RATIO {
+                    return false; // 腿竖直/斜向: 弯腰/站立/弓步
                 }
-                return false;
+                // 第三级: 小腿(膝->踝)也须接近水平. 蹲姿/坐地伸腿从高处俯拍时
+                // 躯干+大腿两级全过(实测坐姿误报), 但其小腿竖直(踝在膝下方),
+                // 躺卧者小腿沿身体横伸(踝与膝同高), 据此区分
+                if let Some(an) = pair_mid(KP_ANKLE_L, KP_ANKLE_R) {
+                    let (adx, ady) = ((an.0 - k.0).abs(), (an.1 - k.1).abs());
+                    let ankle_len = (adx * adx + ady * ady).sqrt();
+                    if ankle_len >= MIN_ANKLE_LEN {
+                        if adx <= ady * ANKLE_RATIO {
+                            return false; // 小腿竖直: 蹲/坐姿
+                        }
+                        // 第四级: 共线判定(决定性). 躺卧者肩髋膝踝近似一条直线;
+                        // 坐地伸腿是折线(膝凸起: 低-高-低), 逐段 abs 比值会漏判,
+                        // 须验证三段与"肩->踝体轴"的夹角都足够小
+                        let (ax, ay) = (an.0 - s.0, an.1 - s.1);
+                        if ax.abs() <= ay.abs() * AXIS_RATIO {
+                            return false; // 体轴不接近水平: 站/坐/蹲
+                        }
+                        let axis_len = (ax * ax + ay * ay).sqrt();
+                        let segments = [
+                            (h.0 - s.0, h.1 - s.1), // 躯干
+                            (k.0 - h.0, k.1 - h.1), // 大腿
+                            (an.0 - k.0, an.1 - k.1), // 小腿
+                        ];
+                        for (sx, sy) in segments {
+                            let cross = (ax * sy - ay * sx).abs();
+                            let len = (sx * sx + sy * sy).sqrt();
+                            if cross > len * axis_len * COLINEAR_SIN {
+                                return false; // 该段偏离体轴: 身体折叠(坐/蹲)
+                            }
+                        }
+                        log_info!(
+                            "躺卧判定(关键点): 躯干横纵 {:.0}/{:.0}, 髋膝横纵 {:.0}/{:.0}, 膝踝横纵 {:.0}/{:.0}, 体轴横纵 {:.0}/{:.0}",
+                            dx, dy, ldx, ldy, adx, ady, ax, ay
+                        );
+                        return true;
+                    }
+                }
+                // 踝关键点不可用或尺度不足: 不据关键点定论, 落到框宽高比判定
             }
         }
         // 膝关键点不可用: 退回框宽高比确认(腿被遮挡的躺卧者整框仍明显偏宽;
@@ -296,17 +372,90 @@ mod tests {
     #[test]
     fn pose_output_horizontal_torso_is_lying() {
         let mut b = OutputBuilder::new(POSE_CHANNELS, 8400, 100);
-        b.person(0.9).box_wh(400.0, 100.0);
-        // 躺卧: 肩(105,101) 髋(205,102) 膝(305,102), 躯干与腿都横向
+        b.person(0.9).box_wh(500.0, 100.0);
+        // 躺卧: 肩(105,101) 髋(205,102) 膝(305,102) 踝(405,102), 全身横向
         b.keypoint(KP_SHOULDER_L, 100.0, 100.0, 0.8)
             .keypoint(KP_SHOULDER_R, 110.0, 102.0, 0.8)
             .keypoint(KP_HIP_L, 200.0, 101.0, 0.8)
             .keypoint(KP_HIP_R, 210.0, 103.0, 0.8)
             .keypoint(KP_KNEE_L, 300.0, 101.0, 0.8)
-            .keypoint(KP_KNEE_R, 310.0, 103.0, 0.8);
+            .keypoint(KP_KNEE_R, 310.0, 103.0, 0.8)
+            .keypoint(KP_ANKLE_L, 400.0, 101.0, 0.8)
+            .keypoint(KP_ANKLE_R, 410.0, 103.0, 0.8);
         let (best, count, lying) = b.parse(0.5);
         assert!(best >= 0.9 && count == 1);
-        assert!(lying, "躯干与腿都横向应判为躺卧");
+        assert!(lying, "躯干/大腿/小腿都横向应判为躺卧");
+    }
+
+    /// 坐地伸腿(高处俯拍, 2026-11-18 实际误报): 躯干前倾投影偏横向, 大腿前伸投影水平,
+    /// 但小腿向下(踝在膝下方), 不得判躺卧
+    #[test]
+    fn pose_sitting_legs_forward_not_lying() {
+        let mut b = OutputBuilder::new(POSE_CHANNELS, 8400, 100);
+        b.person(0.9).box_wh(150.0, 120.0);
+        // 躯干 dx/dy=2.2 过躯干门; 大腿 dx/dy=2.5 过腿门; 踝(208,240)在膝(205,200)正下方
+        b.keypoint(KP_SHOULDER_L, 100.0, 100.0, 0.8)
+            .keypoint(KP_SHOULDER_R, 110.0, 102.0, 0.8)
+            .keypoint(KP_HIP_L, 200.0, 140.0, 0.8)
+            .keypoint(KP_HIP_R, 210.0, 142.0, 0.8)
+            .keypoint(KP_KNEE_L, 250.0, 150.0, 0.8)
+            .keypoint(KP_KNEE_R, 260.0, 152.0, 0.8)
+            .keypoint(KP_ANKLE_L, 205.0, 240.0, 0.8)
+            .keypoint(KP_ANKLE_R, 215.0, 242.0, 0.8);
+        let (_, _, lying) = b.parse(0.5);
+        assert!(!lying, "坐地伸腿(踝在膝下方)不应判为躺卧");
+    }
+
+    /// 坐地抱盆(2026-11-18 实测触发的真实坐标, 高处俯拍): 膝(424)高于髋(435)和踝(431),
+    /// 腿呈低-高-低 Z 字折线, 三段逐段看都"接近水平"(逐段 abs 比值全部通过),
+    /// 只有共线判定能识别出身体是折叠的而非一条直线
+    #[test]
+    fn pose_sitting_zigzag_legs_colinearity_not_lying() {
+        let mut b = OutputBuilder::new(POSE_CHANNELS, 8400, 100);
+        b.person(0.81).box_wh(124.0, 74.0);
+        // 实测: 肩(100,414) 髋(132,435) 膝(161,424) 踝(176,431)
+        b.keypoint(KP_SHOULDER_L, 98.0, 412.0, 0.95)
+            .keypoint(KP_SHOULDER_R, 102.0, 416.0, 0.97)
+            .keypoint(KP_HIP_L, 131.0, 433.0, 0.95)
+            .keypoint(KP_HIP_R, 134.0, 437.0, 0.97)
+            .keypoint(KP_KNEE_L, 158.0, 423.0, 0.91)
+            .keypoint(KP_KNEE_R, 165.0, 425.0, 0.95)
+            .keypoint(KP_ANKLE_L, 172.0, 430.0, 0.87)
+            .keypoint(KP_ANKLE_R, 181.0, 432.0, 0.91);
+        let (_, _, lying) = b.parse(0.5);
+        assert!(!lying, "坐姿Z字形折线(膝凸起)即使逐段全水平也不应判躺卧");
+    }
+
+    /// 蹲姿(2026-11-18 实测数值: 躯干横纵33/23): 投影倾角35°不算接近水平,
+    /// 躯干门(1.5)应直接拒绝
+    #[test]
+    fn pose_squat_tilted_torso_not_lying() {
+        let mut b = OutputBuilder::new(POSE_CHANNELS, 8400, 100);
+        b.person(0.9).box_wh(150.0, 120.0);
+        b.keypoint(KP_SHOULDER_L, 100.0, 100.0, 0.8)
+            .keypoint(KP_SHOULDER_R, 101.0, 101.0, 0.8)
+            .keypoint(KP_HIP_L, 130.0, 122.0, 0.8)
+            .keypoint(KP_HIP_R, 131.0, 123.0, 0.8)
+            .keypoint(KP_KNEE_L, 152.0, 134.0, 0.8)
+            .keypoint(KP_KNEE_R, 153.0, 135.0, 0.8);
+        let (_, _, lying) = b.parse(0.5);
+        assert!(!lying, "躯干横纵33/23(35°倾角)是蹲/坐前倾, 不应判为躺卧");
+    }
+
+    /// 躺卧者踝被遮挡(置信度不足): 关键点不定论, 退框宽高比; 宽框(400x100)应兜底判躺卧
+    #[test]
+    fn pose_lying_ankles_hidden_wide_box_fallback() {
+        let mut b = OutputBuilder::new(POSE_CHANNELS, 8400, 100);
+        b.person(0.9).box_wh(400.0, 100.0);
+        b.keypoint(KP_SHOULDER_L, 100.0, 100.0, 0.8)
+            .keypoint(KP_SHOULDER_R, 110.0, 102.0, 0.8)
+            .keypoint(KP_HIP_L, 200.0, 101.0, 0.8)
+            .keypoint(KP_HIP_R, 210.0, 103.0, 0.8)
+            .keypoint(KP_KNEE_L, 300.0, 101.0, 0.8)
+            .keypoint(KP_KNEE_R, 310.0, 103.0, 0.8)
+            .keypoint(KP_ANKLE_L, 400.0, 101.0, 0.1);
+        let (_, _, lying) = b.parse(0.5);
+        assert!(lying, "躯干/腿横向+踝不可见+宽框应兜底判为躺卧");
     }
 
     /// 弯腰劳作: 躯干接近水平但腿保持竖直(膝在髋正下方), 不应判躺卧(真实误报场景)
@@ -410,8 +559,8 @@ mod tests {
         assert!(r.person, "旋转后仍应检测到人");
     }
 
-    /// 误报回归: 服务器实际触发过躺卧提醒的3张图(实为老人弯腰劳作, 2026-11-17/18),
-    /// 修复后不得再判躺卧
+    /// 误报回归: 服务器实际触发过躺卧提醒的4张图(3张老人弯腰劳作 2026-11-17/18 +
+    /// 1张老人坐墙根抱盆 2026-11-18, 高处俯拍坐姿与躺卧2D同形), 修复后不得再判躺卧
     #[test]
     fn real_bent_over_images_not_lying() {
         let model = std::path::Path::new("models/yolov8n-pose.onnx");
@@ -419,7 +568,7 @@ mod tests {
             log_error!("跳过: 缺少 models/yolov8n-pose.onnx");
             return;
         }
-        for name in ["bent_over.jpg", "bent_over2.jpg", "bent_over3.jpg"] {
+        for name in ["bent_over.jpg", "bent_over2.jpg", "bent_over3.jpg", "sitting_basin.jpg"] {
             let img_path = std::path::Path::new("test_assets").join(name);
             if !img_path.exists() {
                 log_error!("跳过: 缺少 {}", img_path.display());
@@ -446,5 +595,62 @@ mod tests {
         let img = std::fs::read(img_path).unwrap();
         let r = det.detect(&img).expect("推理失败");
         log_info!("scene.jpg 检测到人: {}, 躺卧: {}", r.person, r.lying);
+    }
+
+    /// FP 诊断探针: 打印指定图中 person 分数最高的若干候选框的框/关键点,
+    /// 用于核对是哪个框触发了躺卧判定(本地诊断用, 不设断言)
+    #[test]
+    fn probe_dump_top_anchors() {
+        let model = std::path::Path::new("models/yolov8n-pose.onnx");
+        let probe_img =
+            std::env::var("PROBE_IMG").unwrap_or_else(|_| "test_assets/sitting_basin.jpg".into());
+        let img_path = std::path::Path::new(&probe_img);
+        if !model.exists() || !img_path.exists() {
+            log_error!("跳过: 缺少 {} 或 {}", model.display(), img_path.display());
+            return;
+        }
+        let det = PersonDetector::new(model, 0.4).expect("模型加载失败");
+        let tensor = det
+            .preprocess_image(&std::fs::read(&img_path).unwrap())
+            .expect("预处理失败");
+        let result = det
+            .model
+            .as_ref()
+            .unwrap()
+            .run(tvec!(tensor.into()))
+            .expect("推理失败");
+        let output = result[0].to_array_view::<f32>().unwrap();
+        let dims = output.shape();
+        let (anchors, class_first) = if dims[1] < dims[2] {
+            (dims[2], true)
+        } else {
+            (dims[1], false)
+        };
+        let at = |row: usize, a: usize| -> f32 {
+            if class_first {
+                output[[0, row, a]]
+            } else {
+                output[[0, a, row]]
+            }
+        };
+        let mut idx: Vec<usize> = (0..anchors)
+            .filter(|&a| at(PERSON_SCORE_INDEX, a) >= 0.4)
+            .collect();
+        idx.sort_by(|&a, &b| {
+            at(PERSON_SCORE_INDEX, b)
+                .partial_cmp(&at(PERSON_SCORE_INDEX, a))
+                .unwrap()
+        });
+        for (rank, &a) in idx.iter().take(8).enumerate() {
+            let kp = |i: usize| {
+                let base = BOX_VALUES + 1 + i * 3;
+                format!("({:.0},{:.0},{:.2})", at(base, a), at(base + 1, a), at(base + 2, a))
+            };
+            log_info!(
+                "#{} score={:.2} box=({:.0},{:.0},{:.0},{:.0}) 肩L{} 肩R{} 髋L{} 髋R{} 膝L{} 膝R{} 踝L{} 踝R{} 鼻{}",
+                rank, at(PERSON_SCORE_INDEX, a), at(0, a), at(1, a), at(2, a), at(3, a),
+                kp(5), kp(6), kp(11), kp(12), kp(13), kp(14), kp(15), kp(16), kp(0)
+            );
+        }
     }
 }
