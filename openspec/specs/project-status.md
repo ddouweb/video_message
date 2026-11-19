@@ -53,6 +53,7 @@
 
 - 白天（时间窗内）连续 `APP_INACTIVITY_ALERT_SECS`（默认 7200s）无确认有人 → 推送"⏰ 提醒: 日间已连续X小时未发现人员出现"；持续无人每隔该时长重提
 - 计时基线 = max(最近一次确认有人, 当日时间窗起点)：任一设备确认有人即重置（跨设备并集）；夜间不计时不提醒；服务重启从启动时刻起算
+- 当天超过 `APP_INACTIVITY_ALERT_END_TIME`（默认 21:00:00）不再推（2026-11-19 加：晚间老人早歇属正常）；次日基线自动回到当日窗起点，清晨不补报
 - 依赖人员检测开启（检测关闭无法确认"有人"，此时本提醒不生效）；开关 `APP_INACTIVITY_ALERT_ENABLED`
 
 ### 4. 人员检测
@@ -123,6 +124,7 @@ src/
 | APP_LYING_ALERT_COOLDOWN_SECS | 同设备躺卧提醒冷却期(秒) | 1800 |
 | APP_INACTIVITY_ALERT_ENABLED | 日间长时间无人提醒开关 | on |
 | APP_INACTIVITY_ALERT_SECS | 日间连续无人多久提醒(秒) | 7200 |
+| APP_INACTIVITY_ALERT_END_TIME | 日间无人提醒截止时刻(HH:MM:SS), 晚于该时刻当天不再推 | 21:00:00 |
 | APP_OFFLINE_ALERT_ENABLED | 设备上下线提醒开关 | on |
 | APP_OFFLINE_ALERT_COOLDOWN_SECS | 同设备上下线提醒冷却期(秒) | 300 |
 | APP_ALERT_COOLDOWN_SECS | webhook 即时提醒冷却期(秒) | 600 |

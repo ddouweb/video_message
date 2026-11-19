@@ -298,6 +298,11 @@ pub async fn run_poller() {
         "on" | "true" | "1"
     );
     let inactivity_secs = read_secs_env("APP_INACTIVITY_ALERT_SECS", 7200);
+    // 日间无人提醒截止时刻: 当天晚于该时刻不再推(晚间老人早歇属正常, 无人不异常), 格式同 APP_START_TIME
+    let inactivity_alert_end = std::env::var("APP_INACTIVITY_ALERT_END_TIME")
+        .unwrap_or_else(|_| "21:00:00".to_string());
+    let inactivity_alert_end = NaiveTime::parse_from_str(&inactivity_alert_end, "%H:%M:%S")
+        .expect("Invalid APP_INACTIVITY_ALERT_END_TIME format");
     // 设备上下线提醒: 每轮设备列表与上一轮在线状态比对, 翻转即推送; 冷却期防网络抖动刷屏
     let offline_alert_enabled = matches!(
         std::env::var("APP_OFFLINE_ALERT_ENABLED")
@@ -361,7 +366,7 @@ pub async fn run_poller() {
 
     log_info!(
         "轮询抓拍模式已开启: 无人{interval}秒/有人{active_interval}秒/夜间{night_interval}秒, 到访结束{visit_end_secs}秒, token刷新周期{refresh_hours}小时, 相似度阈值{similarity_threshold}, 时间窗{start_time}~{end_time}, 日间无人提醒{}, 设备上下线提醒{}",
-        if inactivity_alert_enabled { format!("{inactivity_secs}秒") } else { "关闭".to_owned() },
+        if inactivity_alert_enabled { format!("{inactivity_secs}秒截止{inactivity_alert_end}") } else { "关闭".to_owned() },
         if offline_alert_enabled { "开" } else { "关闭" }
     );
 
@@ -430,9 +435,15 @@ pub async fn run_poller() {
         };
 
         // 日间长时间无人提醒: 白天连续 inactivity_secs 未确认有人则推送, 持续无人每隔
-        // 该时长重提一次. 基线=最近一次有人与今日窗起点的较晚者(昨夜有人今晨没人→从窗起点起算)
-        if inactivity_alert_enabled && !night && person_detector.is_some() {
-            let now_local = chrono::Local::now();
+        // 该时长重提一次. 基线=最近一次有人与今日窗起点的较晚者(昨夜有人今晨没人→从窗起点起算).
+        // 超过 inactivity_alert_end(默认21点)不再推: 晚间无人属正常; 次日基线自动回到
+        // 当日窗起点重新计时, 清晨不会补报昨晚的静默
+        let now_local = chrono::Local::now();
+        if inactivity_alert_enabled
+            && !night
+            && person_detector.is_some()
+            && now_local.time() < inactivity_alert_end
+        {
             let baseline = inactivity_baseline(last_person_seen, now_local, start_time);
             let absent = now_local.signed_duration_since(baseline).num_seconds();
             let re_due = inactivity_alert_last.map_or(true, |t| {

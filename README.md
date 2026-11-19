@@ -88,6 +88,7 @@ docker compose down
 | `APP_LYING_ALERT_COOLDOWN_SECS` | 同设备躺卧提醒冷却期（秒），期内不重复提醒 | 1800 |
 | `APP_INACTIVITY_ALERT_ENABLED` | 日间长时间无人提醒开关 | on |
 | `APP_INACTIVITY_ALERT_SECS` | 日间连续无人多久推送提醒（秒） | 7200 |
+| `APP_INACTIVITY_ALERT_END_TIME` | 日间无人提醒截止时刻（HH:MM:SS），当天晚于该时刻不再推 | 21:00:00 |
 | `APP_OFFLINE_ALERT_ENABLED` | 设备上下线提醒开关 | on |
 | `APP_OFFLINE_ALERT_COOLDOWN_SECS` | 同设备上下线提醒冷却期（秒），防网络抖动刷屏 | 300 |
 
@@ -157,6 +158,7 @@ curl -L -o models/yolov8n-pose.onnx https://github.com/ultralytics/assets/releas
 
 - 任一设备确认检测到人即重置计时（跨设备取并集）；
 - 夜间不计时也不提醒（夜间无人属正常）；昨夜有人、今晨一直没人 → 从当天时间窗起点（默认 7:00）起算，即 9:00 仍未有人则提醒；
+- 当天超过 `APP_INACTIVITY_ALERT_END_TIME`（默认 21:00）也不再推——晚间老人早歇属正常，无人不算异常；次日基线自动回到当天窗起点重新计时，清晨不会补报昨晚的静默；
 - 持续无人时每隔该时长重复提醒一次；
 - 依赖本地人员检测开启（`APP_PERSON_ALERT_ENABLED=true`），检测关闭时本提醒不生效（无法确认"有人"）。
 
